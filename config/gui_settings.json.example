@@ -1,0 +1,19 @@
+{
+  "auto_refresh": false,
+  "schema": "ai_credit.gui_settings",
+  "schema_version": 2,
+  "deepseek_api_key": "",
+  "chrome_cdp_url": "http://127.0.0.1:9222",
+  "chrome_cdp_url_2": "http://127.0.0.1:9333",
+  "services": {
+    "qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "bigmodel_coding_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "bigmodel_coding_plan_2": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "z_ai_coding_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "z_ai_coding_plan_2": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "chatgpt_codex": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "kimi_coding_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "qoder_team_credit": {"enabled": true, "auto_refresh_interval_seconds": 300},
+    "deepseek_api": {"enabled": true, "auto_refresh_interval_seconds": 300}
+  }
+}

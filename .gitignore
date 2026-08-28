@@ -1,0 +1,16 @@
+# Local environments and generated files
+out/
+
+# Credentials and authenticated browser state
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Private diagnostics and local application state
+.tmp/
+.claude/settings.local.json
+*.har
+*.trace

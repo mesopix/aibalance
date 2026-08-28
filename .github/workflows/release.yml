@@ -1,0 +1,27 @@
+name: release
+
+# Build the Windows exe and publish a GitHub Release for every v* tag.
+# install.js consumes the resulting asset (aibalance-windows-amd64.exe).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -trimpath -ldflags "-s -w" -o aibalance-windows-amd64.exe .
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: aibalance-windows-amd64.exe
+          generate_release_notes: true
