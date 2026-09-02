@@ -62,12 +62,15 @@ func TestRenderContentOrder(t *testing.T) {
 }
 
 func TestRenderCardQuotaColumnsAlign(t *testing.T) {
+	// Use a future reset so the suffix is "(Resets in ...)" regardless of
+	// when CI runs; the hardcoded past date drifted into "(Reset ... ago)".
+	futureReset := time.Now().Add(5 * 24 * time.Hour).Format("2006-01-02 15:04 MST")
 	views := []aibalance.ServiceView{
 		{Name: "BigModel", Status: "OK", Quotas: []aibalance.QuotaView{
 			{Label: "5h", Remaining: 2000.0, Limit: 2000.0, PercentLeft: 100.0,
 				Reset: "Unused, no reset yet"},
 			{Label: "monthly tools", Remaining: 2702.0, Limit: 10000.0, PercentLeft: 28.0,
-				Reset: "2026-08-28 22:04 CST"},
+				Reset: futureReset},
 		}},
 	}
 
