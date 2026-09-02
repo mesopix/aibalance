@@ -27,7 +27,7 @@ func useTempConfigDir(t *testing.T) {
 func writeGUISettings(t *testing.T, document string) {
 	t.Helper()
 	useTempConfigDir(t)
-	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "AICreditVisualizer")
+	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), appName)
 	if mkdirErr := os.MkdirAll(configDir, 0o700); mkdirErr != nil {
 		t.Fatalf("mkdir config dir: %v", mkdirErr)
 	}

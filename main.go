@@ -1,4 +1,4 @@
-// Command aibalance is the single AICreditVisualizer entry point: with no
+// Command aibalance is the single aibalance entry point: with no
 // arguments it runs the terminal dashboard (cached summary, refresh through
 // the embedded scraper, quota bars); "aibalance cli" runs the Python-
 // compatible scraping CLI that expects an already-running CDP Chrome;

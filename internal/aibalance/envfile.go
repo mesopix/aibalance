@@ -11,15 +11,15 @@ import (
 // go-config-manager; this path is retained only for backward compatibility.
 func UserDataDirectory() string {
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		return filepath.Join(localAppData, "AICreditVisualizer")
+		return filepath.Join(localAppData, appName)
 	}
 	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return filepath.Join(xdgDataHome, "AICreditVisualizer")
+		return filepath.Join(xdgDataHome, appName)
 	}
 	if homeDirectory := os.Getenv("HOME"); homeDirectory != "" {
-		return filepath.Join(homeDirectory, ".local", "share", "AICreditVisualizer")
+		return filepath.Join(homeDirectory, ".local", "share", appName)
 	}
-	return filepath.Join(os.TempDir(), "AICreditVisualizer")
+	return filepath.Join(os.TempDir(), appName)
 }
 
 // UserConfigDirectory returns the base directory used by go-config-manager

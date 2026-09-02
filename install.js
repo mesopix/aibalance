@@ -87,8 +87,11 @@ if (process.platform !== 'win32') {
 if (!process.env.LOCALAPPDATA) {
   die('环境变量 LOCALAPPDATA 未设置，无法确定安装目录。');
 }
-const INSTALL_DIR = path.join(process.env.LOCALAPPDATA, 'AICreditVisualizer');
+const INSTALL_DIR = path.join(process.env.LOCALAPPDATA, 'aibalance');
 const TARGET = path.join(INSTALL_DIR, 'aibalance.exe');
+// Pre-rename layout (AICreditVisualizer). Reported to the user, never
+// modified: it can hold Chrome profiles with live login sessions.
+const LEGACY_INSTALL_DIR = path.join(process.env.LOCALAPPDATA, 'AICreditVisualizer');
 
 // ── Download (follows redirects, e.g. release asset CDN) ─
 function download(url, redirectsLeft) {
@@ -202,11 +205,29 @@ function writeUserPath(type, entries) {
   }
 }
 
-// Match both expanded and %LOCALAPPDATA%-based spellings of the install dir.
-function isInstallDirEntry(entry) {
+// Match both expanded and %LOCALAPPDATA%-based spellings of a given dir.
+function matchesDirEntry(entry, dirPath) {
   const expanded = entry.replace(/%LOCALAPPDATA%/gi, process.env.LOCALAPPDATA);
   const normalize = (candidate) => candidate.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-  return normalize(expanded) === normalize(INSTALL_DIR);
+  return normalize(expanded) === normalize(dirPath);
+}
+
+function isInstallDirEntry(entry) {
+  return matchesDirEntry(entry, INSTALL_DIR);
+}
+
+// Surface the retired layout so users can clean up on their own terms.
+function warnLegacyLeftovers() {
+  if (fs.existsSync(LEGACY_INSTALL_DIR)) {
+    warn(`检测到旧安装目录：${LEGACY_INSTALL_DIR}`);
+    console.log(`  其中可能包含旧版 Chrome 登录 profile，未自动处理；确认无用后手动删除：`);
+    console.log(`  rmdir /s /q "${LEGACY_INSTALL_DIR}"`);
+  }
+  const legacyEntries = readUserPath().entries.filter((entry) => matchesDirEntry(entry, LEGACY_INSTALL_DIR));
+  if (legacyEntries.length > 0) {
+    warn(`用户 PATH 仍指向旧安装目录：${legacyEntries.join(' ; ')}`);
+    console.log('  可在「设置 → 系统 → 高级系统设置 → 环境变量」中手动移除该条目。');
+  }
 }
 
 // Idempotent: add the install dir exactly once, keep every other entry
@@ -267,6 +288,7 @@ async function install(explicitPath) {
   const exeChanged = installExe(source.data);
   ensurePathEntry();
   checkChrome();
+  warnLegacyLeftovers();
 
   console.log('');
   if (exeChanged) {
@@ -276,7 +298,7 @@ async function install(explicitPath) {
   }
   console.log('  重开一个终端运行 aibalance 启动 TUI（已打开的终端不会看到新的 PATH）。');
   console.log('  首次启动会拉起自动化 Chrome 窗口，在窗口内登录各平台；');
-  console.log('  DeepSeek API Key 写入 %LOCALAPPDATA%\\AICreditVisualizer\\gui_settings.json 的 deepseek_api_key。');
+  console.log('  DeepSeek API Key 写入 %APPDATA%\\aibalance\\config.json 的 deepseek_api_key（或运行 aibalance config 编辑）。');
   cleanupDownloadedSelf();
 }
 
@@ -293,8 +315,9 @@ function uninstall() {
     console.log(`未找到 ${TARGET}，跳过。`);
   }
   removePathEntry();
+  warnLegacyLeftovers();
   console.log('');
-  console.log(`${OUT.green}卸载完成。登录 profile、gui_settings.json 与缓存保留在 ${INSTALL_DIR}，可手动删除整个目录彻底清理。${OUT.reset}`);
+  console.log(`${OUT.green}卸载完成。登录 profile 与用量缓存保留在 ${INSTALL_DIR}，配置文件在 %APPDATA%\\aibalance\\config.json，可手动删除彻底清理。${OUT.reset}`);
   cleanupDownloadedSelf();
 }
 

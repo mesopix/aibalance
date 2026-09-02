@@ -20,7 +20,8 @@
 |------|------|
 | `main.go` / `cli.go` / `render.go` | 单一入口 `aibalance`（仓库根目录，可直接 `go install .`）：默认启动 TUI 仪表盘（bubbletea + lipgloss，内嵌抓取与 Chrome 启动器）；`cli` 子命令输出 JSON / 人类可读文本 / 流式进度。 |
 | `internal/aibalance/` | 抓取核心：服务注册、CDP 浏览器层、各服务解析、脱敏、视图层、缓存。 |
-| `%LOCALAPPDATA%/AICreditVisualizer/` | 用量缓存 `latest_summary.json`、配置 `gui_settings.json`（含 DeepSeek Key 与 CDP 端点）、自动化 Chrome profiles。首次运行自动生成该目录与 `gui_settings.json`（模板嵌入 exe，源自 `config/gui_settings.json.example`）。 |
+| `%APPDATA%/aibalance/` | 配置文件 `config.json`（含 DeepSeek Key 与 CDP 端点）。任何子命令首次运行时由嵌入 exe 的模板物化，模板源自 `config/gui_settings.json.example`。 |
+| `%LOCALAPPDATA%/aibalance/` | 用量缓存 `latest_summary.json`（首次刷新成功后写出）与自动化 Chrome profiles（`profiles/ai-balance-chrome`、`profiles/ai-balance-chrome-2`，Chrome 首启创建）。 |
 
 ## 一键安装（新机器）
 
@@ -35,7 +36,9 @@ curl.exe -fsSL -o install.js https://raw.githubusercontent.com/mesopix/aibalance
 node install.js
 ```
 
-安装器从 GitHub Releases 下载最新的 `aibalance-windows-amd64.exe`，放入 `%LOCALAPPDATA%\AICreditVisualizer\`，并把该目录写入用户 PATH（广播环境变更，重开终端后 `aibalance` 直接可用）。重复运行是幂等的：版本相同不替换文件、PATH 不重复添加。卸载：`node install.js --uninstall`（只删除 exe 与 PATH 条目，登录 profile、`gui_settings.json` 与缓存保留）。
+安装器从 GitHub Releases 下载最新的 `aibalance-windows-amd64.exe`，放入 `%LOCALAPPDATA%\aibalance\`，并把该目录写入用户 PATH（广播环境变更，重开终端后 `aibalance` 直接可用）。重复运行是幂等的：版本相同不替换文件、PATH 不重复添加。卸载：`node install.js --uninstall`（只删除 exe 与 PATH 条目，登录 profile 与缓存保留）。
+
+> 从 `AICreditVisualizer` 时代升级的用户：旧安装目录 `%LOCALAPPDATA%\AICreditVisualizer` 与旧的 PATH 条目安装器不会自动删除，只会在结束时提示，请手动清理。配置与登录 profile 不会自动迁移——新目录是一套全新数据，网页平台需要重新登录。
 
 Release 产物由推送 `v*` 标签触发 GitHub Actions 自动构建（`.github/workflows/release.yml`）。开发者验证本地构建时：`go build -trimpath -ldflags "-s -w" -o aibalance.exe .`，然后 `node install.js .\aibalance.exe`。
 
@@ -48,25 +51,29 @@ go run . cli --json     # CLI 子命令
 go install .            # 安装 aibalance 到 $GOPATH/bin
 ```
 
-TUI 启动时自动执行内置启动器：复用或启动常驻 CDP Chrome（主账号端口 `9222`，第二 z.ai 账号端口 `9333`，profile 位于 `%LOCALAPPDATA%\AICreditVisualizer\profiles\`），然后刷新全部服务。按 `r` 刷新、`q` 退出；`--once` 刷新一次即退出（脚本化用）。
+TUI 启动时自动执行内置启动器：复用或启动常驻 CDP Chrome（主账号端口 `9222`，第二 z.ai 账号端口 `9333`，profile 位于 `%LOCALAPPDATA%\aibalance\profiles\`），然后刷新全部服务。按 `r` 刷新、`q` 退出；`--once` 刷新一次即退出（脚本化用）。
 
-## 配置（gui_settings.json）
+## 配置（config.json）
 
-`%LOCALAPPDATA%\AICreditVisualizer\gui_settings.json` 是唯一配置文件（首次运行自动生成，`cli` 子命令同样读取）。除 TUI 的服务开关与自动刷新外，还承载环境字段：
+`%APPDATA%\aibalance\config.json` 是唯一配置文件（首次运行自动生成，`cli` 子命令同样读取）。注意它在 **Roaming**（`%APPDATA%`）而不是安装目录所在的 `%LOCALAPPDATA%`。除 TUI 的服务开关与自动刷新外，还承载环境字段：
 
 ```json
 {
-  "auto_refresh": true,
-  "schema_version": 2,
-  "deepseek_api_key": "",
-  "chrome_cdp_url": "http://127.0.0.1:9222",
-  "chrome_cdp_url_2": "http://127.0.0.1:9333",
-  "services": {
-    "qwen_token_plan": { "enabled": true, "auto_refresh_interval_seconds": 120 },
-    "chatgpt_codex": { "enabled": false, "auto_refresh_interval_seconds": 300 }
+  "meta": { "version": "2" },
+  "fields": {
+    "auto_refresh": false,
+    "deepseek_api_key": "",
+    "chrome_cdp_url": "http://127.0.0.1:9222",
+    "chrome_cdp_url_2": "http://127.0.0.1:9333",
+    "services": {
+      "qwen_token_plan": { "enabled": true, "auto_refresh_interval_seconds": 120 },
+      "chatgpt_codex": { "enabled": false, "auto_refresh_interval_seconds": 300 }
+    }
   }
 }
 ```
+
+`services` 里未列出的服务按「启用 + 默认 300 秒」处理；`aibalance config` 保存时会把全部已知服务写全。
 
 - `enabled: false` 的服务不刷新、不渲染、不写入 `latest_summary.json`；未列出的服务默认启用。
 - `auto_refresh: true` 时按各服务 `auto_refresh_interval_seconds`（默认 300 秒）独立定时刷新，同刻到期的服务合并为一批；缓存新鲜（<5 分钟）时启动直接显示缓存，各定时器从启动时刻起算。
@@ -109,4 +116,4 @@ go test ./...
 
 - 禁止提交 `.env*`、Chrome profile、快照、API Key 或私钥。
 - 调试输出（`--debug`）经过防御性脱敏，但脱敏不能作为公开分享保证，不要提交或分享调试产物。
-- 浏览器自动化使用专用 profile（`%LOCALAPPDATA%\AICreditVisualizer\profiles\`），而非日常浏览 profile。
+- 浏览器自动化使用专用 profile（`%LOCALAPPDATA%\aibalance\profiles\`），而非日常浏览 profile。

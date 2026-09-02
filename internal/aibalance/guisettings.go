@@ -24,7 +24,7 @@ const guiSettingsSchemaVersion = "2"
 
 // appName identifies this application's config directory under
 // os.UserConfigDir(); it is stable across binary renames.
-const appName = "AICreditVisualizer"
+const appName = "aibalance"
 
 // ServiceSetting is one service's resolved entry from the config document.
 type ServiceSetting struct {
