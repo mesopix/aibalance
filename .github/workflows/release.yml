@@ -1,7 +1,8 @@
 name: release
 
-# Build the Windows exe and publish a GitHub Release for every v* tag.
-# install.js consumes the resulting asset (aibalance-windows-amd64.exe).
+# Cross-compile the five supported targets and publish a GitHub Release for
+# every v* tag. install.js consumes these assets; their names are derived
+# from GOOS/GOARCH and must stay in sync with install.js.
 on:
   push:
     tags:
@@ -11,8 +12,9 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  # Native checks first: go test needs to actually run the binary.
+  test:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -20,8 +22,50 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
-      - run: go build -trimpath -ldflags "-s -w" -o aibalance-windows-amd64.exe .
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64, ext: '.exe' }
+          - { goos: linux, goarch: amd64, ext: '' }
+          - { goos: linux, goarch: arm64, ext: '' }
+          - { goos: darwin, goarch: amd64, ext: '' }
+          - { goos: darwin, goarch: arm64, ext: '' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # vet runs for the target platform, so per-OS build tags are checked.
+      - run: go vet ./...
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+      - run: go build -trimpath -ldflags "-s -w" -o "aibalance-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" .
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aibalance-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: aibalance-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: aibalance-*
+          merge-multiple: true
+      - run: ls -l dist
       - uses: softprops/action-gh-release@v2
         with:
-          files: aibalance-windows-amd64.exe
+          files: dist/*
           generate_release_notes: true

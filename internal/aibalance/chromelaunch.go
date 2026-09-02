@@ -10,10 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-
-	"golang.org/x/sys/windows"
 )
 
 // chromeStartupTimeout bounds how long we wait for CDP after launching.
@@ -24,22 +21,6 @@ const chromeStartupTimeout = 20 * time.Second
 // survives checkouts and clones).
 func ProfileDirectory(profileName string) string {
 	return filepath.Join(UserDataDirectory(), "profiles", profileName)
-}
-
-// FindChromeExecutable locates chrome.exe in the standard installation
-// directories, mirroring findChromeExecutable in chrome_launcher.cpp.
-func FindChromeExecutable() (string, error) {
-	for _, environmentName := range []string{"ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"} {
-		baseDirectory := os.Getenv(environmentName)
-		if baseDirectory == "" {
-			continue
-		}
-		candidate := filepath.Join(baseDirectory, "Google", "Chrome", "Application", "chrome.exe")
-		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("Google Chrome was not found in the standard installation directories")
 }
 
 // chromeEnsureMutex serializes readiness checks and launches: independent
@@ -93,26 +74,29 @@ func probeCDPVersion(cdpPort int) error {
 	return nil
 }
 
+// chromeLaunchArguments builds the CDP flags shared by every platform:
+// loopback-only debugging on cdpPort with a dedicated profile directory.
+func chromeLaunchArguments(cdpPort int, profileDirectory string) []string {
+	return []string{
+		"--remote-debugging-address=127.0.0.1",
+		"--remote-debugging-port=" + strconv.Itoa(cdpPort),
+		"--user-data-dir=" + profileDirectory,
+		"--profile-directory=Default",
+		"--no-first-run",
+		"--no-default-browser-check",
+	}
+}
+
 // launchChromeDetached starts Chrome detached so it outlives this process,
-// mirroring launchChromeDetached in chrome_launcher.cpp.
+// mirroring launchChromeDetached in chrome_launcher.cpp. The detachment
+// mechanism itself is platform-specific; see detachedProcessAttr.
 func launchChromeDetached(chromeExecutable string, cdpPort int, profileDirectory string) error {
 	if mkdirErr := os.MkdirAll(filepath.Dir(profileDirectory), 0o700); mkdirErr != nil {
 		return fmt.Errorf("create profile parent directory: %w", mkdirErr)
 	}
 
-	command := exec.Command(chromeExecutable,
-		"--remote-debugging-address=127.0.0.1",
-		"--remote-debugging-port="+strconv.Itoa(cdpPort),
-		"--user-data-dir="+profileDirectory,
-		"--profile-directory=Default",
-		"--no-first-run",
-		"--no-default-browser-check",
-	)
-	// Detached: no job object, handles closed immediately, so the resident
-	// Chrome survives this process exiting.
-	command.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,
-	}
+	command := exec.Command(chromeExecutable, chromeLaunchArguments(cdpPort, profileDirectory)...)
+	command.SysProcAttr = detachedProcessAttr()
 	if startErr := command.Start(); startErr != nil {
 		return startErr
 	}

@@ -13,9 +13,10 @@ aibalance 是一个单语言 Go 项目：通过常驻 CDP Chrome 抓取各 AI �
 | `main.go` / `cli.go` / `render.go` | 单一入口 `aibalance`（位于仓库根目录，可直接 `go install .`）：默认启动 bubbletea + lipgloss 终端仪表盘（内嵌抓取与 Chrome 启动器，`r` 刷新、`l` 为需要登录的服务打开登录页、`q` 退出、`--once` 单次模式；卡片顶边框右侧是该服务的刷新状态位——正在刷新显示灰色 `⟳`，否则显示距上次刷新的耗时，并按已用刷新间隔比例着色：<30% 绿、30–80% 黄、≥80% 红，自动刷新关闭时保持灰色；无卡片的异常/需要登录行在刷新时把 detail 换成 `⟳ refreshing`，状态栏不再显示刷新进度；各卡片独立刷新——每服务一个独立 Cmd/context/超时，完成即合并显示与缓存，自动刷新按服务独立到期触发，`r` 跳过在飞服务；CLI 子命令保持串行）；`cli` 子命令提供 Python 兼容 CLI（`--only` / `--json` / `--progress-jsonl` / `--debug` / `--strict-exit`）；`config` 子命令（`config.go`）用 stdin 菜单交互编辑 `config.json`（`<n>` 切换开关、`<n> <秒>` 设间隔、`a` 切自动刷新、`s` 保存、`q` 退出，保存走 `SaveGUISettings` 原子写；`--edit` 改用 `$EDITOR`（默认 notepad）直接打开文件，退出后校验 JSON）；主入口 `-h` 由 `printMainUsage` 列出子命令。 |
 | `internal/aibalance/` | 抓取核心包（见下）。 |
 | `config/` | 配置原型目录：`gui_settings.json.example` 由 `embed.go` 以 `go:embed` 编译期嵌入 exe；用户目录缺文件时加载器把它物化成实体文件，example 即默认值单一来源（代码常量仅兜底，`deepseek_api_key` 在模板中必须保持空串惰性，由 `TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。文件格式为两层 `{meta: {version: "2"}, fields: {...}}`，由 go-config-manager v0.5.0 管理。 |
-| `install.js` / `.github/workflows/release.yml` | 一键安装：推送 `v*` 标签触发 Actions 构建并发布 `aibalance-windows-amd64.exe` 到 Release；`install.js`（对齐 claude-code-statusline / git-config-sync 的安装器模式）下载 Release exe 到 `%LOCALAPPDATA%\aibalance\`、写用户 PATH（reg add + WM_SETTINGCHANGE 广播，禁用 setx）、支持 `curl \| node` 远程安装与 `--uninstall`（只删 exe 与 PATH 条目，数据保留；检测到旧 `AICreditVisualizer` 目录或旧 PATH 条目时只提示，不自动删除）。 |
-| `%APPDATA%/aibalance/` | 配置文件 `config.json`（两层 `{meta, fields}` 格式，由 go-config-manager 管理；schema version 在 `meta.version`；任何子命令首启由嵌入 example 物化）。 |
-| `%LOCALAPPDATA%/aibalance/` | 用量缓存 `latest_summary.json`（首次刷新后写出）、自动化 Chrome profiles（`profiles/ai-balance-chrome`、`profiles/ai-balance-chrome-2`，Chrome 首启创建）、遗留 `.env.local`（启动时一次性并入 settings 后删除，无法识别的 key 会保留文件并提示）。旧版 `gui_settings.json` 不再使用，新安装直接写入 `%APPDATA%` 下的 `config.json`。 |
+| `install.js` / `.github/workflows/release.yml` | 一键安装（跨平台）：推送 `v*` 标签触发 Actions 交叉编译 `windows-amd64` / `linux-amd64` / `linux-arm64` / `darwin-amd64` / `darwin-arm64` 五个产物并发布到 Release；`install.js`（对齐 claude / aider / uv 的共用 bin 目录约定）按平台下载对应产物到 **`~/.local/bin/`**，PATH 里缺该目录时才补一条——Windows 走 `reg add` 写 `HKCU\Environment` 并广播 `WM_SETTINGCHANGE`（禁用 setx），Unix 向 shell 启动文件追加带 `# >>> aibalance >>>` 标记的块（幂等，卸载时按标记整段移除）；支持 `curl \| node` 远程安装与 `--uninstall`（只删二进制，数据保留；检测到旧 `AICreditVisualizer` / 旧 `%LOCALAPPDATA%\aibalance` 残留 exe 或旧 PATH 条目时只提示，不自动删除）。 |
+| `~/.local/bin/` | 安装位置（`aibalance` / `aibalance.exe`）。多工具共用目录，所以卸载时不动对应的 PATH 条目。 |
+| `%APPDATA%/aibalance/`（Windows）、`~/Library/Application Support/aibalance/`（macOS）、`~/.config/aibalance/`（Linux） | 配置文件 `config.json`（两层 `{meta, fields}` 格式，由 go-config-manager 管理；schema version 在 `meta.version`；任何子命令首启由嵌入 example 物化）。 |
+| `%LOCALAPPDATA%/aibalance/`（Windows）、`$XDG_DATA_HOME` 或 `~/.local/share/aibalance`（Unix） | 用量缓存 `latest_summary.json`（首次刷新后写出）、自动化 Chrome profiles（`profiles/ai-balance-chrome`、`profiles/ai-balance-chrome-2`，Chrome 首启创建）、遗留 `.env.local`（启动时一次性并入 settings 后删除，无法识别的 key 会保留文件并提示）。旧版 `gui_settings.json` 不再使用，新安装直接写入用户配置目录下的 `config.json`。 |
 
 `internal/aibalance` 内部结构：
 
@@ -23,7 +24,7 @@ aibalance 是一个单语言 Go 项目：通过常驻 CDP Chrome 抓取各 AI �
 |------|------|
 | `service.go` | 服务注册表（`serviceRegistry`）、`Run` 串行调度（TUI 以每服务独立 `Run` 调用实现并发）、`SummarizeOutput`、进度事件。 |
 | `browser.go` | CDP 连接（loopback 校验）、每服务专属常驻 tab（按 origin 认领，`acquireServicePage`）、`probeWebDashboard`（所有等待带超时封顶、同文档导航走 ignore-cache reload）、`makeWebDashboardRunner`、`OpenLoginPages`（TUI 按 `l` 打开登录页）。 |
-| `chromelaunch.go` | Chrome 启动器：查找 chrome.exe、复用或 detached 启动 CDP Chrome、等待就绪。 |
+| `chromelaunch.go` + `chromelaunch_windows.go` / `chromelaunch_other.go` | Chrome 启动器：查找 Chrome、复用或 detached 启动 CDP Chrome、等待就绪。平台差异用 `//go:build` 隔离——Windows 文件提供 `chrome.exe` 目录查找与 `CREATE_NEW_PROCESS_GROUP\|DETACHED_PROCESS`，另一个文件提供 macOS bundle / PATH 查找与 `Setpgid`；共享的启动参数与 `launchChromeDetached` 留在 `chromelaunch.go`。 |
 | `collector.go` | JSON API 响应收集器（URL 关键字 + content-type 过滤、body 批量获取）。 |
 | `deepseek.go` / `zai.go` / `qwen.go` / `kimi.go` / `qoder.go` / `codex.go` | 各服务的抓取与解析（`summarize*` 纯函数）。 |
 | `privacy.go` | `RedactText` / `RedactData` 正则脱敏（对齐原 privacy.py）。 |
@@ -39,6 +40,17 @@ go run .                # TUI 仪表盘（自动启动/复用 CDP Chrome）
 go run . cli --json     # CLI 子命令
 go run . config         # 交互式编辑 config.json
 go install .            # 安装 aibalance 到 $GOPATH/bin
+```
+
+交叉编译验证（五个发布目标，与 release.yml 的矩阵一致）：
+
+```powershell
+foreach ($target in @('windows/amd64','linux/amd64','linux/arm64','darwin/amd64','darwin/arm64')) {
+  $goos, $goarch = $target -split '/'
+  $env:GOOS = $goos; $env:GOARCH = $goarch
+  go build ./...
+  Remove-Item Env:GOOS, Env:GOARCH
+}
 ```
 
 TUI 内置启动器：主账号 Chrome 端口 `9222`，第二账号 Chrome 端口 `9333`（Z.ai Coding #2 与 BigModel Coding #2 共用该实例与 profile，两个站点 origin 不同、登录态互不影响），profile 在 `%LOCALAPPDATA%\aibalance\profiles\`。`cli` 子命令不启动 Chrome，依赖常驻 Chrome 已运行（可用 `--cdp-url` 指定）。
@@ -83,7 +95,9 @@ go run . cli --only deepseek_api --json --progress-jsonl
 
 - 禁止提交 `.env*`、Chrome Profile、快照、浏览器 Trace、API Key 或私钥。DeepSeek Key 落在用户目录的 `config.json`，模板中的 `deepseek_api_key` 必须保持空串（`TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。
 - 调试输出（`--debug`）必须脱敏；脱敏仅作为纵深防御，不能把调试产物视为可公开内容。
-- 浏览器自动化使用专用 Profile（`%LOCALAPPDATA%\aibalance\profiles\`），而非日常浏览 Profile。
+- 浏览器自动化使用专用 Profile（数据目录的 `profiles/` 下），而非日常浏览 Profile。
+- **跨平台**：Go 侧与安装器都支持 Windows / macOS / Linux（amd64、arm64）。新增依赖系统调用的代码时按 `//go:build` 拆文件，并用 `GOOS=... GOARCH=... go build ./...` 交叉编译验证五个目标；不要在主文件里直接引用 `syscall.SysProcAttr` 的平台专属字段。
+- **Linux 无头环境**：`launchChromeDetached` 目前不加 `--headless`，纯命令行服务器需要已有 X/Wayland 显示或用 Xvfb，否则 Chrome 起不来。
 - **用户目录已从 `AICreditVisualizer` 改名为 `aibalance`**（`appName` 常量与 `UserDataDirectory()` 共用它，见 `internal/aibalance/guisettings.go` 与 `envfile.go`），旧目录**不做自动迁移**：升级后配置回到嵌入 example 的默认值、Chrome profile 重建、网页服务需重新登录。`install.js` 检测到旧目录或旧 PATH 条目时只打印提示，不删除任何东西。
 - CDP 端点仅允许 loopback（`assertLoopbackCDPURL` 强制）。
 
