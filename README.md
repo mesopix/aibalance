@@ -28,10 +28,10 @@
 
 ```powershell
 # 一行安装（下载 install.js 并直接运行，不留文件）
-curl.exe -fsSL https://raw.githubusercontent.com/anonymous/AICreditVisulizer/master/install.js | node
+curl.exe -fsSL https://raw.githubusercontent.com/mesopix/aibalance/main/install.js | node
 
 # 或分两步（失败时可直接 node install.js 重试）
-curl.exe -fsSL -o install.js https://raw.githubusercontent.com/anonymous/AICreditVisulizer/master/install.js
+curl.exe -fsSL -o install.js https://raw.githubusercontent.com/mesopix/aibalance/main/install.js
 node install.js
 ```
 

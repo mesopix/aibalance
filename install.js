@@ -16,11 +16,11 @@ const path = require('path');
 const https = require('https');
 const { spawnSync } = require('child_process');
 
-const OWNER = 'anonymous';
-const REPO = 'AICreditVisulizer';
+const OWNER = 'mesopix';
+const REPO = 'aibalance';
 const ASSET_NAME = 'aibalance-windows-amd64.exe';
 const RELEASE_API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
-const INSTALLER_URL = `https://raw.githubusercontent.com/${OWNER}/${REPO}/master/install.js`;
+const INSTALLER_URL = `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/install.js`;
 
 const USAGE = `用法：
   node install.js                          安装最新的 GitHub Release 版本
