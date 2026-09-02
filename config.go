@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,16 +11,18 @@ import (
 	"strings"
 	"time"
 
+	configmanager "github.com/mesopix/go-config-manager"
+
 	"aibalance/internal/aibalance"
 )
 
 // runConfig implements the "aibalance config" subcommand: by default an
-// interactive stdin menu editor for gui_settings.json (auto-refresh switch,
-// service toggles, per-service refresh intervals); --edit opens the file in
-// the user's editor instead.
+// interactive stdin menu editor for config.json (auto-refresh switch,
+// service toggles, per-service refresh intervals); --edit opens the file
+// in the user's editor instead. Corrupt config files are fatal.
 func runConfig(args []string) {
 	flags := flag.NewFlagSet("config", flag.ExitOnError)
-	editMode := flags.Bool("edit", false, "Open gui_settings.json in your editor ($EDITOR, notepad by default).")
+	editMode := flags.Bool("edit", false, "Open config.json in your editor ($EDITOR, notepad by default).")
 	flags.Parse(args)
 
 	if *editMode {
@@ -29,7 +32,13 @@ func runConfig(args []string) {
 
 	settings, loadErr := aibalance.LoadGUISettings()
 	if loadErr != nil {
-		fmt.Fprintf(os.Stderr, "load gui_settings.json (starting from defaults): %v\n", loadErr)
+		var corruptErr *configmanager.CorruptConfigError
+		if errors.As(loadErr, &corruptErr) {
+			fmt.Fprintf(os.Stderr, "config file %s is corrupt: %v\n", corruptErr.Path, corruptErr.Err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "load config.json: %v\n", loadErr)
+		os.Exit(1)
 	}
 
 	serviceCount := len(aibalance.ServiceOrder)
@@ -66,7 +75,7 @@ func runConfig(args []string) {
 		case "s":
 			saveErr := aibalance.SaveGUISettings(resolveGUISettings(settings, enabled, intervals))
 			if saveErr != nil {
-				fmt.Fprintf(os.Stderr, "save gui_settings.json: %v\n", saveErr)
+				fmt.Fprintf(os.Stderr, "save config.json: %v\n", saveErr)
 				os.Exit(1)
 			}
 			fmt.Printf("saved %s\n", aibalance.GUISettingsPath())
@@ -95,8 +104,8 @@ func runConfig(args []string) {
 	}
 }
 
-// openSettingsInEditor launches the user's editor on gui_settings.json and
-// warns when the edited file no longer parses.
+// openSettingsInEditor launches the user's editor on config.json and
+// exits fatally when the edited file no longer parses.
 func openSettingsInEditor() {
 	editorFields := strings.Fields(firstNonEmpty(os.Getenv("EDITOR"), "notepad"))
 	editorCommand := exec.Command(editorFields[0], append(editorFields[1:], aibalance.GUISettingsPath())...)
@@ -105,10 +114,16 @@ func openSettingsInEditor() {
 	editorCommand.Stderr = os.Stderr
 	if runErr := editorCommand.Run(); runErr != nil {
 		fmt.Fprintf(os.Stderr, "run editor: %v\n", runErr)
-		return
+		os.Exit(1)
 	}
 	if _, loadErr := aibalance.LoadGUISettings(); loadErr != nil {
-		fmt.Fprintf(os.Stderr, "load gui_settings.json after edit: %v\n", loadErr)
+		var corruptErr *configmanager.CorruptConfigError
+		if errors.As(loadErr, &corruptErr) {
+			fmt.Fprintf(os.Stderr, "config file %s is corrupt after edit: %v\n", corruptErr.Path, corruptErr.Err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "load config.json after edit: %v\n", loadErr)
+		os.Exit(1)
 	}
 }
 

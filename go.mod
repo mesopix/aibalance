@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/go-rod/rod v0.116.2
+	github.com/mesopix/go-config-manager v0.5.0
 	golang.org/x/sys v0.38.0
 )
 

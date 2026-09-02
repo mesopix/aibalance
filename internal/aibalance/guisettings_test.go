@@ -9,23 +9,36 @@ import (
 	"aibalance/config"
 )
 
-// writeGUISettings redirects the user data directory to a temp directory
-// and writes a raw gui_settings.json document there.
+// useTempConfigDir redirects os.UserConfigDir to a temp directory so tests
+// never touch the real user config. It covers Windows (AppData/LOCALAPPDATA),
+// Linux (XDG_CONFIG_HOME/XDG_DATA_HOME), and macOS (HOME).
+func useTempConfigDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("AppData", dir)
+	t.Setenv("LOCALAPPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+	t.Setenv("HOME", dir)
+}
+
+// writeGUISettings writes a raw config.json document into the redirected
+// user config directory for tests that need a pre-existing file.
 func writeGUISettings(t *testing.T, document string) {
 	t.Helper()
-	dataDirectory := t.TempDir()
-	t.Setenv("LOCALAPPDATA", dataDirectory)
-	settingsPath := filepath.Join(dataDirectory, "AICreditVisualizer", "gui_settings.json")
-	if mkdirErr := os.MkdirAll(filepath.Dir(settingsPath), 0o700); mkdirErr != nil {
-		t.Fatalf("mkdir settings dir: %v", mkdirErr)
+	useTempConfigDir(t)
+	configDir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "AICreditVisualizer")
+	if mkdirErr := os.MkdirAll(configDir, 0o700); mkdirErr != nil {
+		t.Fatalf("mkdir config dir: %v", mkdirErr)
 	}
+	settingsPath := filepath.Join(configDir, "config.json")
 	if writeErr := os.WriteFile(settingsPath, []byte(document), 0o600); writeErr != nil {
-		t.Fatalf("write gui_settings.json: %v", writeErr)
+		t.Fatalf("write config.json: %v", writeErr)
 	}
 }
 
 func TestLoadGUISettingsMissingFileMaterializesExample(t *testing.T) {
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	useTempConfigDir(t)
 
 	settings, err := LoadGUISettings()
 	if err != nil {
@@ -47,12 +60,28 @@ func TestLoadGUISettingsMissingFileMaterializesExample(t *testing.T) {
 	}
 
 	// The embedded example is written to disk so users can edit it directly.
-	written, readErr := os.ReadFile(GUISettingsPath())
-	if readErr != nil {
-		t.Fatalf("materialized gui_settings.json missing: %v", readErr)
+	// Verify the materialized file parses to the same settings as the example;
+	// SaveGUISettings always stamps meta.version so raw-byte equality is not
+	// expected after a save round-trip.
+	if _, statErr := os.Stat(GUISettingsPath()); statErr != nil {
+		t.Fatalf("materialized config.json missing: %v", statErr)
 	}
-	if string(written) != string(config.GUISettingsExample) {
-		t.Error("materialized gui_settings.json should match the embedded example")
+	materialized, loadErr := LoadGUISettings()
+	if loadErr != nil {
+		t.Fatalf("reload materialized config.json: %v", loadErr)
+	}
+	exampleSettings, decodeErr := decodeGUISettings(config.GUISettingsExample)
+	if decodeErr != nil {
+		t.Fatalf("decode embedded example: %v", decodeErr)
+	}
+	if materialized.AutoRefresh != exampleSettings.AutoRefresh ||
+		materialized.DeepSeekAPIKey != exampleSettings.DeepSeekAPIKey ||
+		materialized.ChromeCDPURL != exampleSettings.ChromeCDPURL ||
+		materialized.ChromeCDPURL2 != exampleSettings.ChromeCDPURL2 {
+		t.Errorf("materialized settings %+v differ from example %+v", materialized, exampleSettings)
+	}
+	if len(materialized.Services) != len(exampleSettings.Services) {
+		t.Errorf("materialized services count = %d, want %d", len(materialized.Services), len(exampleSettings.Services))
 	}
 }
 
@@ -98,17 +127,18 @@ func TestEmbeddedGUISettingsExampleMatchesRegistry(t *testing.T) {
 
 func TestLoadGUISettingsFullDocument(t *testing.T) {
 	writeGUISettings(t, `{
-		"auto_refresh": true,
-		"schema": "ai_credit.gui_settings",
-		"schema_version": 2,
-		"deepseek_api_key": "sk-doc",
-		"chrome_cdp_url": "http://127.0.0.1:8222",
-		"chrome_cdp_url_2": "http://127.0.0.1:9444",
-		"services": {
-			"qwen_token_plan": {"auto_refresh_interval_seconds": 120, "enabled": true},
-			"chatgpt_codex": {"auto_refresh_interval_seconds": 300, "enabled": false},
-			"z_ai_coding_plan_2": {"auto_refresh_interval_seconds": 300, "enabled": false},
-			"deepseek_api": {"auto_refresh_interval_seconds": 300, "enabled": true}
+		"meta": {"version": "2"},
+		"fields": {
+			"auto_refresh": true,
+			"deepseek_api_key": "sk-doc",
+			"chrome_cdp_url": "http://127.0.0.1:8222",
+			"chrome_cdp_url_2": "http://127.0.0.1:9444",
+			"services": {
+				"qwen_token_plan": {"auto_refresh_interval_seconds": 120, "enabled": true},
+				"chatgpt_codex": {"auto_refresh_interval_seconds": 300, "enabled": false},
+				"z_ai_coding_plan_2": {"auto_refresh_interval_seconds": 300, "enabled": false},
+				"deepseek_api": {"auto_refresh_interval_seconds": 300, "enabled": true}
+			}
 		}
 	}`)
 
@@ -151,12 +181,15 @@ func TestLoadGUISettingsFullDocument(t *testing.T) {
 
 func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 	writeGUISettings(t, `{
-		"auto_refresh": true,
-		"services": {
-			"qwen_token_plan": {"enabled": false},
-			"kimi_coding_plan": {"auto_refresh_interval_seconds": 0},
-			"qoder_team_credit": {"auto_refresh_interval_seconds": -5, "enabled": true},
-			"retired_service": {"enabled": false}
+		"meta": {},
+		"fields": {
+			"auto_refresh": true,
+			"services": {
+				"qwen_token_plan": {"enabled": false},
+				"kimi_coding_plan": {"auto_refresh_interval_seconds": 0},
+				"qoder_team_credit": {"auto_refresh_interval_seconds": -5, "enabled": true},
+				"retired_service": {"enabled": false}
+			}
 		}
 	}`)
 
@@ -185,17 +218,11 @@ func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 }
 
 func TestLoadGUISettingsMalformedDocument(t *testing.T) {
-	writeGUISettings(t, `{"auto_refresh": true, "services":`)
+	writeGUISettings(t, `{"meta": {}, "fields": {"auto_refresh": true, "services":`)
 
-	settings, err := LoadGUISettings()
+	_, err := LoadGUISettings()
 	if err == nil {
 		t.Fatal("LoadGUISettings() should fail on malformed JSON")
-	}
-	if settings.AutoRefresh {
-		t.Error("malformed document should yield default settings, not auto-refresh")
-	}
-	if enabled := settings.EnabledServices(); len(enabled) != len(ServiceOrder) {
-		t.Errorf("EnabledServices() = %v, want all services (defaults)", enabled)
 	}
 }
 
@@ -203,7 +230,7 @@ func TestLoadGUISettingsMalformedDocument(t *testing.T) {
 // version 1 compatibility: documents written before the .env.local merge
 // decode with empty environment fields.
 func TestLoadGUISettingsV1DocumentYieldsEmptyEnvironmentFields(t *testing.T) {
-	writeGUISettings(t, `{"auto_refresh": false, "schema": "ai_credit.gui_settings", "schema_version": 1, "services": {}}`)
+	writeGUISettings(t, `{"meta": {"version": "1"}, "fields": {"auto_refresh": false, "services": {}}}`)
 
 	settings, err := LoadGUISettings()
 	if err != nil {
@@ -216,7 +243,7 @@ func TestLoadGUISettingsV1DocumentYieldsEmptyEnvironmentFields(t *testing.T) {
 }
 
 func TestSaveGUISettingsRoundTrip(t *testing.T) {
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	useTempConfigDir(t)
 
 	saved := GUISettings{
 		AutoRefresh:    true,

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// writeEnvLocal writes a raw .env.local into the redirected user data
+// writeEnvLocal writes a raw .env.local into the redirected user config
 // directory for migration tests.
 func writeEnvLocal(t *testing.T, contents string) {
 	t.Helper()
@@ -58,8 +58,18 @@ func TestParseEnvLocalSkipsCommentsAndStripsQuotes(t *testing.T) {
 }
 
 func TestLoadStartupSettingsFreshMachineMaterializesSettingsOnly(t *testing.T) {
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	useTempConfigDir(t)
 	restoreBridgeEnvironment(t)
+
+	// Ensure .env.local does not exist in the redirected user data dir;
+	// otherwise a leftover from another test would be migrated in.
+	envLocalPath := EnvLocalPath()
+	if mkdirErr := os.MkdirAll(filepath.Dir(envLocalPath), 0o700); mkdirErr != nil {
+		t.Fatalf("mkdir user data dir: %v", mkdirErr)
+	}
+	if removeErr := os.Remove(envLocalPath); removeErr != nil && !os.IsNotExist(removeErr) {
+		t.Fatalf("remove stale .env.local: %v", removeErr)
+	}
 
 	settings, err := LoadStartupSettings()
 	if err != nil {
@@ -76,7 +86,7 @@ func TestLoadStartupSettingsFreshMachineMaterializesSettingsOnly(t *testing.T) {
 	}
 
 	if _, statErr := os.Stat(GUISettingsPath()); statErr != nil {
-		t.Fatalf("first run should materialize gui_settings.json: %v", statErr)
+		t.Fatalf("first run should materialize config.json: %v", statErr)
 	}
 	// .env.local is retired: a fresh machine must never grow one again.
 	if _, statErr := os.Stat(EnvLocalPath()); !os.IsNotExist(statErr) {
@@ -85,8 +95,13 @@ func TestLoadStartupSettingsFreshMachineMaterializesSettingsOnly(t *testing.T) {
 }
 
 func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
-	writeGUISettings(t, `{"auto_refresh": true, "schema": "ai_credit.gui_settings", "schema_version": 1,
-		"services": {"qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 120}}}`)
+	writeGUISettings(t, `{
+		"meta": {"version": "1"},
+		"fields": {
+			"auto_refresh": true,
+			"services": {"qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 120}}
+		}
+	}`)
 	writeEnvLocal(t, strings.Join([]string{
 		"# legacy template header",
 		"DEEPSEEK_API_KEY=sk-legacy",
@@ -115,28 +130,38 @@ func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
 		t.Error("fully consumed .env.local should be deleted after migration")
 	}
 
-	// The merged values persist as a version 2 document.
+	// The merged values persist in the two-layer format with version "2".
 	written, readErr := os.ReadFile(GUISettingsPath())
 	if readErr != nil {
-		t.Fatalf("read migrated gui_settings.json: %v", readErr)
+		t.Fatalf("read migrated config.json: %v", readErr)
 	}
-	var document struct {
-		SchemaVersion  int    `json:"schema_version"`
-		DeepSeekAPIKey string `json:"deepseek_api_key"`
+	var envelope struct {
+		Meta struct {
+			Version string `json:"version"`
+		} `json:"meta"`
+		Fields struct {
+			DeepSeekAPIKey string `json:"deepseek_api_key"`
+		} `json:"fields"`
 	}
-	if decodeErr := json.Unmarshal(written, &document); decodeErr != nil {
-		t.Fatalf("migrated gui_settings.json does not parse: %v", decodeErr)
+	if decodeErr := json.Unmarshal(written, &envelope); decodeErr != nil {
+		t.Fatalf("migrated config.json does not parse: %v", decodeErr)
 	}
-	if document.SchemaVersion != guiSettingsSchemaVersion {
-		t.Errorf("schema_version = %d, want %d", document.SchemaVersion, guiSettingsSchemaVersion)
+	if envelope.Meta.Version != guiSettingsSchemaVersion {
+		t.Errorf("meta.version = %q, want %q", envelope.Meta.Version, guiSettingsSchemaVersion)
 	}
-	if document.DeepSeekAPIKey != "sk-legacy" {
-		t.Errorf("persisted deepseek_api_key = %q, want %q", document.DeepSeekAPIKey, "sk-legacy")
+	if envelope.Fields.DeepSeekAPIKey != "sk-legacy" {
+		t.Errorf("persisted deepseek_api_key = %q, want %q", envelope.Fields.DeepSeekAPIKey, "sk-legacy")
 	}
 }
 
 func TestMigrateEnvLocalAllCommentedDeletesFileWithoutRewritingSettings(t *testing.T) {
-	const settingsDocument = `{"auto_refresh": true, "services": {"kimi_coding_plan": {"enabled": false, "auto_refresh_interval_seconds": 600}}}`
+	const settingsDocument = `{
+		"meta": {},
+		"fields": {
+			"auto_refresh": true,
+			"services": {"kimi_coding_plan": {"enabled": false, "auto_refresh_interval_seconds": 600}}
+		}
+	}`
 	writeGUISettings(t, settingsDocument)
 	writeEnvLocal(t, "# every assignment stays commented\n#DEEPSEEK_API_KEY=sk-unused\n")
 	restoreBridgeEnvironment(t)
@@ -149,15 +174,26 @@ func TestMigrateEnvLocalAllCommentedDeletesFileWithoutRewritingSettings(t *testi
 	}
 	written, readErr := os.ReadFile(GUISettingsPath())
 	if readErr != nil {
-		t.Fatalf("read gui_settings.json: %v", readErr)
+		t.Fatalf("read config.json: %v", readErr)
 	}
-	if string(written) != settingsDocument {
-		t.Error("gui_settings.json should only be rewritten when a field actually changed")
+	// Normalize whitespace for comparison since SaveGUISettings re-indents.
+	var parsedOriginal, parsedWritten any
+	if err := json.Unmarshal([]byte(settingsDocument), &parsedOriginal); err != nil {
+		t.Fatalf("parse original: %v", err)
+	}
+	if err := json.Unmarshal(written, &parsedWritten); err != nil {
+		t.Fatalf("parse written: %v", err)
+	}
+	if !reflect.DeepEqual(parsedOriginal, parsedWritten) {
+		t.Error("config.json should only be rewritten when a field actually changed")
 	}
 }
 
 func TestMigrateEnvLocalKeepsSettingsValueWhenFieldAlreadySet(t *testing.T) {
-	writeGUISettings(t, `{"auto_refresh": false, "deepseek_api_key": "sk-from-settings", "services": {}}`)
+	writeGUISettings(t, `{
+		"meta": {},
+		"fields": {"auto_refresh": false, "deepseek_api_key": "sk-from-settings", "services": {}}
+	}`)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-from-env\n")
 	restoreBridgeEnvironment(t)
 
@@ -174,7 +210,7 @@ func TestMigrateEnvLocalKeepsSettingsValueWhenFieldAlreadySet(t *testing.T) {
 }
 
 func TestMigrateEnvLocalKeepsFileOnUnknownKeys(t *testing.T) {
-	writeGUISettings(t, `{"auto_refresh": false, "services": {}}`)
+	writeGUISettings(t, `{"meta": {}, "fields": {"auto_refresh": false, "services": {}}}`)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-legacy\nCUSTOM_KEY=1\n")
 	restoreBridgeEnvironment(t)
 
@@ -198,20 +234,20 @@ func TestMigrateEnvLocalKeepsFileOnUnknownKeys(t *testing.T) {
 }
 
 func TestMigrateEnvLocalSkippedWhenSettingsMalformed(t *testing.T) {
-	const brokenDocument = `{"auto_refresh": true, "services":`
+	const brokenDocument = `{"meta": {}, "fields": {"auto_refresh": true, "services":`
 	writeGUISettings(t, brokenDocument)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-legacy\n")
 	restoreBridgeEnvironment(t)
 
 	if _, err := LoadStartupSettings(); err == nil {
-		t.Fatal("malformed gui_settings.json should surface the load error")
+		t.Fatal("malformed config.json should surface the load error")
 	}
 	if _, statErr := os.Stat(EnvLocalPath()); statErr != nil {
 		t.Fatalf(".env.local must survive for the next run: %v", statErr)
 	}
 	written, readErr := os.ReadFile(GUISettingsPath())
 	if readErr != nil {
-		t.Fatalf("read gui_settings.json: %v", readErr)
+		t.Fatalf("read config.json: %v", readErr)
 	}
 	if string(written) != brokenDocument {
 		t.Error("a failed load must not be followed by a merge-and-save overwrite")

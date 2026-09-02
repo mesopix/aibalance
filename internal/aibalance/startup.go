@@ -8,21 +8,19 @@ import (
 	"strings"
 )
 
-// LoadStartupSettings is the single startup entry: it loads gui_settings.json
-// (materializing it from the embedded example on a fresh machine), folds any
-// legacy .env.local into it once, and bridges the environment fields into
-// the process environment. Errors are joined for the caller to warn about;
-// startup always proceeds with whatever settings resolved.
+// LoadStartupSettings is the single startup entry: it loads config.json
+// (materializing it from the embedded example on a fresh machine), folds
+// any legacy .env.local into it once, and bridges the environment fields
+// into the process environment. Corrupt config files are fatal; other
+// errors are joined for the caller to warn about.
 func LoadStartupSettings() (GUISettings, error) {
 	settings, loadErr := LoadGUISettings()
-	var migrateErr error
-	if loadErr == nil {
-		// Never merge-and-save on top of a failed load: the fallback
-		// settings would overwrite the user's broken-but-recoverable file.
-		migrateErr = migrateEnvLocal(&settings)
+	if loadErr != nil {
+		return settings, loadErr
 	}
+	migrateErr := migrateEnvLocal(&settings)
 	applyErr := applyGUISettingsEnvironment(settings)
-	return settings, errors.Join(loadErr, migrateErr, applyErr)
+	return settings, errors.Join(migrateErr, applyErr)
 }
 
 // migrateEnvLocal folds a legacy .env.local into settings once: known keys

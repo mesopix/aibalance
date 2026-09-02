@@ -7,12 +7,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"maps"
 	"os"
 	"time"
 
+	configmanager "github.com/mesopix/go-config-manager"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -521,11 +523,17 @@ func (m *model) View() string {
 
 func main() {
 	// The startup settings load runs for every entry point (TUI, cli,
-	// config): it materializes gui_settings.json on a fresh machine, folds
-	// a legacy .env.local into it once, and bridges the DeepSeek/CDP fields
+	// config): it materializes config.json on a fresh machine, folds a
+	// legacy .env.local into it once, and bridges the DeepSeek/CDP fields
 	// into the environment for the flag defaults and scrapers below.
+	// Corrupt config files are fatal; other errors warn but continue.
 	settings, settingsErr := aibalance.LoadStartupSettings()
 	if settingsErr != nil {
+		var corruptErr *configmanager.CorruptConfigError
+		if errors.As(settingsErr, &corruptErr) {
+			fmt.Fprintf(os.Stderr, "config file %s is corrupt: %v\n", corruptErr.Path, corruptErr.Err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "load startup settings: %v\n", settingsErr)
 	}
 

@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// UserDataDirectory mirrors user_data_directory in ai_balance.py:
-// LOCALAPPDATA, then XDG_DATA_HOME, then HOME, then the temp directory.
+// UserDataDirectory returns the legacy user data directory for .env.local
+// and latest_summary.json. New config files live under os.UserConfigDir via
+// go-config-manager; this path is retained only for backward compatibility.
 func UserDataDirectory() string {
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
 		return filepath.Join(localAppData, "AICreditVisualizer")
@@ -19,6 +20,18 @@ func UserDataDirectory() string {
 		return filepath.Join(homeDirectory, ".local", "share", "AICreditVisualizer")
 	}
 	return filepath.Join(os.TempDir(), "AICreditVisualizer")
+}
+
+// UserConfigDirectory returns the base directory used by go-config-manager
+// for this app's config.json. It mirrors os.UserConfigDir but falls back
+// to UserDataDirectory when the system call fails, keeping tests that
+// redirect LOCALAPPDATA functional on Windows.
+func UserConfigDirectory() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return UserDataDirectory()
+	}
+	return dir
 }
 
 // EnvLocalPath returns the legacy .env.local path inside the user data
