@@ -10,11 +10,12 @@ AICreditVisualizer 是一个单语言 Go 项目：通过常驻 CDP Chrome 抓取
 
 | 路径 | 说明 |
 |------|------|
-| `main.go` / `cli.go` / `render.go` | 单一入口 `aibalance`（位于仓库根目录，可直接 `go install .`）：默认启动 bubbletea + lipgloss 终端仪表盘（内嵌抓取与 Chrome 启动器，`r` 刷新、`l` 为需要登录的服务打开登录页、`q` 退出、`--once` 单次模式；卡片顶边框右侧是该服务的刷新状态位——正在刷新显示灰色 `⟳`，否则显示距上次刷新的耗时，并按已用刷新间隔比例着色：<30% 绿、30–80% 黄、≥80% 红，自动刷新关闭时保持灰色；无卡片的异常/需要登录行在刷新时把 detail 换成 `⟳ refreshing`，状态栏不再显示刷新进度；各卡片独立刷新——每服务一个独立 Cmd/context/超时，完成即合并显示与缓存，自动刷新按服务独立到期触发，`r` 跳过在飞服务；CLI 子命令保持串行）；`cli` 子命令提供 Python 兼容 CLI（`--only` / `--json` / `--progress-jsonl` / `--debug` / `--strict-exit`）；`config` 子命令（`config.go`）用 stdin 菜单交互编辑 `gui_settings.json`（`<n>` 切换开关、`<n> <秒>` 设间隔、`a` 切自动刷新、`s` 保存、`q` 退出，保存走 `SaveGUISettings` 原子写；`--edit` 改用 `$EDITOR`（默认 notepad）直接打开文件，退出后校验 JSON）；主入口 `-h` 由 `printMainUsage` 列出子命令。 |
+| `main.go` / `cli.go` / `render.go` | 单一入口 `aibalance`（位于仓库根目录，可直接 `go install .`）：默认启动 bubbletea + lipgloss 终端仪表盘（内嵌抓取与 Chrome 启动器，`r` 刷新、`l` 为需要登录的服务打开登录页、`q` 退出、`--once` 单次模式；卡片顶边框右侧是该服务的刷新状态位——正在刷新显示灰色 `⟳`，否则显示距上次刷新的耗时，并按已用刷新间隔比例着色：<30% 绿、30–80% 黄、≥80% 红，自动刷新关闭时保持灰色；无卡片的异常/需要登录行在刷新时把 detail 换成 `⟳ refreshing`，状态栏不再显示刷新进度；各卡片独立刷新——每服务一个独立 Cmd/context/超时，完成即合并显示与缓存，自动刷新按服务独立到期触发，`r` 跳过在飞服务；CLI 子命令保持串行）；`cli` 子命令提供 Python 兼容 CLI（`--only` / `--json` / `--progress-jsonl` / `--debug` / `--strict-exit`）；`config` 子命令（`config.go`）用 stdin 菜单交互编辑 `config.json`（`<n>` 切换开关、`<n> <秒>` 设间隔、`a` 切自动刷新、`s` 保存、`q` 退出，保存走 `SaveGUISettings` 原子写；`--edit` 改用 `$EDITOR`（默认 notepad）直接打开文件，退出后校验 JSON）；主入口 `-h` 由 `printMainUsage` 列出子命令。 |
 | `internal/aibalance/` | 抓取核心包（见下）。 |
-| `config/` | 配置原型目录：`gui_settings.json.example` 由 `embed.go` 以 `go:embed` 编译期嵌入 exe；用户目录缺文件时加载器把它物化成实体文件，example 即默认值单一来源（代码常量仅兜底，`deepseek_api_key` 在模板中必须保持空串惰性，由 `TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。 |
+| `config/` | 配置原型目录：`gui_settings.json.example` 由 `embed.go` 以 `go:embed` 编译期嵌入 exe；用户目录缺文件时加载器把它物化成实体文件，example 即默认值单一来源（代码常量仅兜底，`deepseek_api_key` 在模板中必须保持空串惰性，由 `TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。文件格式为两层 `{meta: {version: "2"}, fields: {...}}`，由 go-config-manager v0.5.0 管理。 |
 | `install.js` / `.github/workflows/release.yml` | 一键安装：推送 `v*` 标签触发 Actions 构建并发布 `aibalance-windows-amd64.exe` 到 Release；`install.js`（对齐 claude-code-statusline / git-config-sync 的安装器模式）下载 Release exe 到 `%LOCALAPPDATA%\AICreditVisualizer\`、写用户 PATH（reg add + WM_SETTINGCHANGE 广播，禁用 setx）、支持 `curl \| node` 远程安装与 `--uninstall`（只删 exe 与 PATH 条目，数据保留）。 |
-| `%LOCALAPPDATA%/AICreditVisualizer/` | 唯一配置 `gui_settings.json`（schema v2：服务开关、自动刷新间隔、`deepseek_api_key` 与两个 `chrome_cdp_url`；任何子命令首启由嵌入 example 物化）、用量缓存 `latest_summary.json`（首次刷新后写出）、自动化 Chrome profiles（`profiles/ai-balance-chrome`、`profiles/ai-balance-chrome-2`，Chrome 首启创建）。旧 `.env.local` 启动时一次性并入 settings 后删除（无法识别的 key 会保留文件并提示）。 |
+| `%APPDATA%/AICreditVisualizer/` | 配置文件 `config.json`（两层 `{meta, fields}` 格式，由 go-config-manager 管理；schema version 在 `meta.version`；任何子命令首启由嵌入 example 物化）。 |
+| `%LOCALAPPDATA%/AICreditVisualizer/` | 用量缓存 `latest_summary.json`（首次刷新后写出）、自动化 Chrome profiles（`profiles/ai-balance-chrome`、`profiles/ai-balance-chrome-2`，Chrome 首启创建）、遗留 `.env.local`（启动时一次性并入 settings 后删除，无法识别的 key 会保留文件并提示）。旧版 `gui_settings.json` 不再使用，新安装直接写入 `%APPDATA%` 下的 `config.json`。 |
 
 `internal/aibalance` 内部结构：
 
@@ -28,7 +29,7 @@ AICreditVisualizer 是一个单语言 Go 项目：通过常驻 CDP Chrome 抓取
 | `privacy.go` | `RedactText` / `RedactData` 正则脱敏（对齐原 privacy.py）。 |
 | `formatting.go` / `convert.go` | CST 时间格式化、lenient 数值转换。 |
 | `view.go` | summary → `ServiceView` / `QuotaView` 结构化视图（CLI 与 TUI 共用）。 |
-| `cache.go` / `envfile.go` / `guisettings.go` / `startup.go` | `latest_summary.json` 原子读写（复用 `writeUserDataFile`）、用户数据目录定位与 `.env.local` 宽松解析（`parseEnvLocal` 纯函数）、`gui_settings.json` 加载/保存（缺文件时物化嵌入 example；enabled 过滤、自动刷新间隔、环境字段）、`LoadStartupSettings` 统一启动入口（物化 + 一次性 `.env.local` 迁移 + 把环境字段桥接为进程环境变量，真实环境变量不被覆盖）。 |
+| `cache.go` / `envfile.go` / `guisettings.go` / `startup.go` | `latest_summary.json` 原子读写（复用 `writeUserDataFile`）、用户数据目录定位（`UserDataDirectory` 供缓存与遗留文件，`UserConfigDirectory` 供 config.json）与 `.env.local` 宽松解析（`parseEnvLocal` 纯函数）、`config.json` 加载/保存（通过 go-config-manager v0.5.0；缺文件时物化嵌入 example；坏文件返回 `*configmanager.CorruptConfigError`，所有入口 fatal 退出；enabled 过滤、自动刷新间隔、环境字段）、`LoadStartupSettings` 统一启动入口（物化 + 一次性 `.env.local` 迁移 + 把环境字段桥接为进程环境变量，真实环境变量不被覆盖）。 |
 
 ## 3. 构建与运行
 
@@ -80,7 +81,7 @@ go run . cli --only deepseek_api --json --progress-jsonl
 
 ## 7. 安全与保密
 
-- 禁止提交 `.env*`、Chrome Profile、快照、浏览器 Trace、API Key 或私钥。DeepSeek Key 落在用户目录的 `gui_settings.json`，模板中的 `deepseek_api_key` 必须保持空串（`TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。
+- 禁止提交 `.env*`、Chrome Profile、快照、浏览器 Trace、API Key 或私钥。DeepSeek Key 落在用户目录的 `config.json`，模板中的 `deepseek_api_key` 必须保持空串（`TestEmbeddedGUISettingsExampleMatchesRegistry` 强制）。
 - 调试输出（`--debug`）必须脱敏；脱敏仅作为纵深防御，不能把调试产物视为可公开内容。
 - 浏览器自动化使用专用 Profile（`%LOCALAPPDATA%\AICreditVisualizer\profiles\`），而非日常浏览 Profile。
 - CDP 端点仅允许 loopback（`assertLoopbackCDPURL` 强制）。
@@ -103,3 +104,4 @@ go run . cli --only deepseek_api --json --progress-jsonl
 - TUI 各服务独立并发刷新：`claimServiceTarget` 由包级互斥锁串行化，避免并发认领同一 origin 时重复创建常驻 tab；锁内只有 `pageClaimTimeout` 封顶的 browser 级调用，attach 放在锁外，单个卡住的 tab 不会连带堵死其他服务；单服务刷新超时 2 分钟（`refreshTimeout`），卡住时报错而非一直转圈；`EnsureCDPChromeReady` 由包级互斥锁串行化"检查+启动+等待"，避免并发 ensure 重复拉起 Chrome；每次 probe 独立建 CDP 连接、collector 按 page 隔离，无其他跨服务共享状态。
 - 网页服务的抓取结果仍受 SPA 渲染时序影响（原 Python 实现同样如此）。解析逻辑以单测 fixture 为准。
 - z.ai 使用 session cookie（浏览器关闭即失效）；其他服务多为持久 cookie。Chrome 重启后 z.ai 需要重新登录。
+- **配置文件损坏时所有入口（TUI、cli、config 子命令）统一打印含文件路径的错误并以非零码退出**，不再沿用旧的"警告后用默认值继续"行为。修复流程预留但尚未实现（库侧 `RepairAppConfig` 为桩接口）。
