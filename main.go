@@ -418,9 +418,6 @@ func (m *model) openLoginPages(services []string) tea.Cmd {
 // armAutoRefreshFromNow schedules every enabled service one interval ahead
 // from the current moment (the fresh-cache startup path).
 func (m *model) armAutoRefreshFromNow() {
-	if !m.settings.AutoRefresh {
-		return
-	}
 	now := time.Now()
 	for _, serviceName := range m.enabledServices {
 		m.nextDue[serviceName] = now.Add(m.settings.AutoRefreshInterval(serviceName))
@@ -430,9 +427,6 @@ func (m *model) armAutoRefreshFromNow() {
 // rearmServiceSchedule moves one service's deadline one interval ahead; a
 // failed attempt counts too, so errors do not cause a retry storm.
 func (m *model) rearmServiceSchedule(serviceName string) {
-	if !m.settings.AutoRefresh {
-		return
-	}
 	m.nextDue[serviceName] = time.Now().Add(m.settings.AutoRefreshInterval(serviceName))
 }
 
@@ -449,9 +443,9 @@ func (m *model) dueServices(now time.Time) []string {
 }
 
 // scheduleNextAutoRefresh arms one tick at the earliest pending deadline;
-// it returns nil when auto-refresh is off or nothing is scheduled.
+// it returns nil in --once mode or when nothing is scheduled.
 func (m *model) scheduleNextAutoRefresh() tea.Cmd {
-	if !m.settings.AutoRefresh || m.onceMode {
+	if m.onceMode {
 		return nil
 	}
 	var earliest time.Time

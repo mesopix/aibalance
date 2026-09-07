@@ -204,7 +204,7 @@ func TestCardStamp(t *testing.T) {
 			"kimi_coding_plan": time.Now().Add(-3 * time.Minute),
 		},
 		inFlight: map[string]bool{"qwen_token_plan": true},
-		settings: aibalance.GUISettings{AutoRefresh: true},
+		settings: aibalance.GUISettings{},
 	}
 
 	if got := ansi.Strip(cardStamp("kimi_coding_plan", state)); got != "3m" {
@@ -245,21 +245,6 @@ func TestAgeStyleThresholds(t *testing.T) {
 			t.Errorf("ageStyle(%v) color = %v, want %v",
 				testCase.elapsed, got, testCase.want.GetForeground())
 		}
-	}
-	// No refresh deadline means the age carries no urgency.
-	if got := ageStyle(time.Hour, 0).GetForeground(); got != mutedStyle.GetForeground() {
-		t.Errorf("ageStyle(no interval) color = %v, want muted", got)
-	}
-}
-
-// With auto-refresh off the stamp must stay muted rather than fake urgency.
-func TestCardStampWithoutAutoRefresh(t *testing.T) {
-	state := dashboardState{
-		refreshedAt: map[string]time.Time{"kimi_coding_plan": time.Now().Add(-9 * time.Hour)},
-	}
-	want := mutedStyle.Render("9h")
-	if got := cardStamp("kimi_coding_plan", state); got != want {
-		t.Errorf("cardStamp(auto-refresh off) = %q, want %q", got, want)
 	}
 }
 

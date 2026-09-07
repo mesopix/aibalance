@@ -14,7 +14,6 @@ import (
 // saving never wipes the migrated DeepSeek key or CDP endpoints.
 func TestResolveGUISettingsCarriesEnvironmentFields(t *testing.T) {
 	base := aibalance.GUISettings{
-		AutoRefresh:    true,
 		DeepSeekAPIKey: "sk-keep",
 		ChromeCDPURL:   "http://127.0.0.1:9222",
 		ChromeCDPURL2:  "http://127.0.0.1:9333",
@@ -31,9 +30,6 @@ func TestResolveGUISettingsCarriesEnvironmentFields(t *testing.T) {
 	if resolved.ChromeCDPURL2 != base.ChromeCDPURL2 {
 		t.Errorf("ChromeCDPURL2 = %q, want %q", resolved.ChromeCDPURL2, base.ChromeCDPURL2)
 	}
-	if !resolved.AutoRefresh {
-		t.Error("AutoRefresh = false, want the base value")
-	}
 }
 
 // TestRunConfigMenuDiscardNeedsSecondQuit guards the anti-data-loss guard:
@@ -42,7 +38,7 @@ func TestRunConfigMenuDiscardNeedsSecondQuit(t *testing.T) {
 	saveCalls := 0
 	saveSettings := func(aibalance.GUISettings) error { saveCalls++; return nil }
 
-	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("a\nq\nq\n")),
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("1\nq\nq\n")),
 		aibalance.GUISettings{}, saveSettings)
 
 	if menuErr != nil {
@@ -72,7 +68,7 @@ func TestRunConfigMenuCleanQuitExitsImmediately(t *testing.T) {
 }
 
 // TestRunConfigMenuSaveAfterQuitWarning verifies s still saves after the
-// discard warning, carrying the in-menu auto_refresh toggle into the save.
+// discard warning, carrying the in-menu service toggle into the save.
 func TestRunConfigMenuSaveAfterQuitWarning(t *testing.T) {
 	saveCalls := 0
 	var lastSaved aibalance.GUISettings
@@ -82,7 +78,7 @@ func TestRunConfigMenuSaveAfterQuitWarning(t *testing.T) {
 		return nil
 	}
 
-	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("a\nq\ns\n")),
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("1\nq\ns\n")),
 		aibalance.GUISettings{}, saveSettings)
 
 	if menuErr != nil {
@@ -91,8 +87,9 @@ func TestRunConfigMenuSaveAfterQuitWarning(t *testing.T) {
 	if saveCalls != 1 {
 		t.Fatalf("save called %d times, want 1", saveCalls)
 	}
-	if !lastSaved.AutoRefresh {
-		t.Error("saved AutoRefresh = false, want true (toggled in the menu)")
+	if !lastSaved.IsServiceEnabled(aibalance.ServiceOrder[0]) {
+		t.Errorf("saved %s = disabled, want enabled (toggled in the menu)",
+			aibalance.ServiceOrder[0])
 	}
 }
 

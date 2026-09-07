@@ -77,7 +77,7 @@ func TestLaunchServiceRefreshesSkipsInFlight(t *testing.T) {
 }
 
 func TestAutoRefreshTickLaunchesDueServices(t *testing.T) {
-	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{AutoRefresh: true}, false)
+	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{}, false)
 	testModel.enabledServices = []string{"deepseek_api", "kimi_coding_plan", "qoder_team_credit"}
 	firedAt := time.Now()
 	testModel.nextDue["deepseek_api"] = firedAt.Add(-time.Minute)
@@ -111,7 +111,7 @@ func TestAutoRefreshTickLaunchesDueServices(t *testing.T) {
 }
 
 func TestHandleServiceRefreshDoneMergesAndRearms(t *testing.T) {
-	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{AutoRefresh: true}, false)
+	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{}, false)
 	testModel.summary = map[string]any{
 		"generated_at": "2026-08-26 10:00:00 CST",
 		"accounts": map[string]any{
@@ -165,7 +165,7 @@ func TestHandleServiceRefreshDoneMergesAndRearms(t *testing.T) {
 }
 
 func TestHandleServiceRefreshDoneErrorKeepsData(t *testing.T) {
-	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{AutoRefresh: true}, false)
+	testModel := newModel(aibalance.RunOptions{}, aibalance.GUISettings{}, false)
 	testModel.summary = map[string]any{
 		"generated_at": "2026-08-26 10:00:00 CST",
 		"accounts": map[string]any{

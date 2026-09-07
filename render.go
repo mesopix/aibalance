@@ -67,15 +67,6 @@ type dashboardState struct {
 	width       int // terminal width in cells; 0 means unknown
 }
 
-// refreshInterval returns the service's auto-refresh interval, or 0 when
-// auto-refresh is off and the age counts toward no deadline.
-func (state dashboardState) refreshInterval(serviceID string) time.Duration {
-	if !state.settings.AutoRefresh {
-		return 0
-	}
-	return state.settings.AutoRefreshInterval(serviceID)
-}
-
 // renderHeader renders the title plus refresh timestamp and data source.
 func renderHeader(state dashboardState) string {
 	header := titleStyle.Render("AI Credit Visualizer")
@@ -244,16 +235,12 @@ func cardStamp(serviceID string, state dashboardState) string {
 		return ""
 	}
 	elapsed := time.Since(refreshedTime)
-	return ageStyle(elapsed, state.refreshInterval(serviceID)).Render(formatAge(elapsed))
+	return ageStyle(elapsed, state.settings.AutoRefreshInterval(serviceID)).Render(formatAge(elapsed))
 }
 
 // ageStyle colors the age by how much of the refresh interval it has eaten:
-// green below 30%, yellow below 80%, red beyond. Without an interval the
-// age counts toward no deadline and stays muted.
+// green below 30%, yellow below 80%, red beyond.
 func ageStyle(elapsed, interval time.Duration) lipgloss.Style {
-	if interval <= 0 {
-		return mutedStyle
-	}
 	switch elapsedShare := float64(elapsed) / float64(interval); {
 	case elapsedShare < 0.3:
 		return okStyle

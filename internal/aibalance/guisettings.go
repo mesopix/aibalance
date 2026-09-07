@@ -32,13 +32,12 @@ type ServiceSetting struct {
 	AutoRefreshInterval time.Duration
 }
 
-// GUISettings is the resolved config document: the global auto_refresh
-// switch, the environment fields (DeepSeek API key and the two CDP
-// endpoints, merged from the retired .env.local), and per-service
-// overrides. Services absent from the document fall back to disabled with
-// the default interval: every service is opt-in.
+// GUISettings is the resolved config document: the environment fields
+// (DeepSeek API key and the two CDP endpoints, merged from the retired
+// .env.local) and per-service overrides. Services absent from the document
+// fall back to disabled with the default interval: every service is opt-in.
+// Auto-refresh is always on; only the per-service interval is configurable.
 type GUISettings struct {
-	AutoRefresh    bool
 	DeepSeekAPIKey string
 	ChromeCDPURL   string
 	ChromeCDPURL2  string
@@ -47,9 +46,9 @@ type GUISettings struct {
 
 // guiSettingsDocument mirrors the fields layer of the on-disk JSON; pointer
 // fields distinguish an absent entry (fall back to the default) from an
-// explicit false or 0.
+// explicit false or 0. The retired auto_refresh key is left as an unknown
+// field: standard decoding ignores it, so old files load unchanged.
 type guiSettingsDocument struct {
-	AutoRefresh    bool                          `json:"auto_refresh"`
 	DeepSeekAPIKey string                        `json:"deepseek_api_key"`
 	ChromeCDPURL   string                        `json:"chrome_cdp_url"`
 	ChromeCDPURL2  string                        `json:"chrome_cdp_url_2"`
@@ -137,7 +136,6 @@ func decodeGUISettings(documentBytes []byte) (GUISettings, error) {
 // applying per-field fallbacks for absent entries.
 func resolveFromDocument(document guiSettingsDocument) GUISettings {
 	settings := GUISettings{
-		AutoRefresh:    document.AutoRefresh,
 		DeepSeekAPIKey: document.DeepSeekAPIKey,
 		ChromeCDPURL:   document.ChromeCDPURL,
 		ChromeCDPURL2:  document.ChromeCDPURL2,
@@ -167,7 +165,6 @@ func resolveFromDocument(document guiSettingsDocument) GUISettings {
 // guiSettingsSchemaVersion so migrated documents carry the current schema.
 func SaveGUISettings(settings GUISettings) error {
 	document := guiSettingsDocument{
-		AutoRefresh:    settings.AutoRefresh,
 		DeepSeekAPIKey: settings.DeepSeekAPIKey,
 		ChromeCDPURL:   settings.ChromeCDPURL,
 		ChromeCDPURL2:  settings.ChromeCDPURL2,

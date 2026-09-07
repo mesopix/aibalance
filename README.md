@@ -63,13 +63,12 @@ TUI 启动时自动执行内置启动器：复用或启动常驻 CDP Chrome（�
 
 ## 配置（config.json）
 
-唯一的配置文件（首次运行自动生成，`cli` 子命令同样读取）在系统的用户配置目录里，与安装位置无关：`%APPDATA%\aibalance\config.json`（Windows）／`~/Library/Application Support/aibalance/config.json`（macOS）／`~/.config/aibalance/config.json`（Linux）。除 TUI 的服务开关与自动刷新外，还承载环境字段：
+唯一的配置文件（首次运行自动生成，`cli` 子命令同样读取）在系统的用户配置目录里，与安装位置无关：`%APPDATA%\aibalance\config.json`（Windows）／`~/Library/Application Support/aibalance/config.json`（macOS）／`~/.config/aibalance/config.json`（Linux）。除 TUI 的服务开关与刷新间隔外，还承载环境字段：
 
 ```json
 {
   "meta": { "version": "2" },
   "fields": {
-    "auto_refresh": false,
     "deepseek_api_key": "",
     "chrome_cdp_url": "http://127.0.0.1:9222",
     "chrome_cdp_url_2": "http://127.0.0.1:9333",
@@ -81,11 +80,11 @@ TUI 启动时自动执行内置启动器：复用或启动常驻 CDP Chrome（�
 }
 ```
 
-`services` 里未列出的服务按「启用 + 默认 300 秒」处理；`aibalance config` 保存时会把全部已知服务写全。
+`services` 里未列出的服务按「禁用 + 默认 300 秒」处理；`aibalance config` 保存时会把全部已知服务写全。
 
-- `enabled: false` 的服务不刷新、不渲染、不写入 `latest_summary.json`；未列出的服务默认启用。
-- `auto_refresh: true` 时按各服务 `auto_refresh_interval_seconds`（默认 300 秒）独立定时刷新，同刻到期的服务合并为一批；缓存新鲜（<5 分钟）时启动直接显示缓存，各定时器从启动时刻起算。
-- 手动 `r` 刷新全部启用服务并重置各定时器；文件缺失或非法时回退默认（全部启用、不自动刷新）。
+- `enabled: false` 的服务不刷新、不渲染、不写入 `latest_summary.json`；未列出的服务默认禁用。
+- 自动刷新始终开启，无总开关：各服务按 `auto_refresh_interval_seconds`（默认 300 秒）独立定时刷新，同刻到期的服务合并为一批；缓存新鲜（<5 分钟）时启动直接显示缓存，各定时器从启动时刻起算。
+- 手动 `r` 刷新全部启用服务并重置各定时器；文件缺失时自动生成默认配置（全部服务禁用），损坏时报错退出。
 - `deepseek_api_key` 填入 DeepSeek API Key（留空则跳过该服务）；`chrome_cdp_url` / `chrome_cdp_url_2` 是两个自动化 Chrome 的 CDP 端点（默认 9222 / 9333）。环境变量 `DEEPSEEK_API_KEY` / `CHROME_CDP_URL` / `CHROME_CDP_URL_2` 仍可覆盖文件值，显式 `--cdp-url` 优先级最高。
 - 旧版 `.env.local` 会在启动时自动并入本文件（仅填空字段）并删除；含无法识别 key 的文件会保留并在 stderr 提示。
 - 编辑方式：`aibalance config`（stdin 菜单）或 `aibalance config --edit`（用 `$EDITOR` 打开文件直接编辑，默认 notepad）；`aibalance -h` 列出全部子命令。

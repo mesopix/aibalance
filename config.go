@@ -17,9 +17,10 @@ import (
 )
 
 // runConfig implements the "aibalance config" subcommand: by default an
-// interactive stdin menu editor for config.json (auto-refresh switch,
-// service toggles, per-service refresh intervals); --edit opens the file
-// in the user's editor instead. Corrupt config files are fatal.
+// interactive stdin menu editor for config.json (service toggles and
+// per-service refresh intervals; auto-refresh itself is always on); --edit
+// opens the file in the user's editor instead. Corrupt config files are
+// fatal.
 func runConfig(args []string) {
 	flags := flag.NewFlagSet("config", flag.ExitOnError)
 	editMode := flags.Bool("edit", false, "Open config.json in your editor ($EDITOR, notepad by default).")
@@ -64,7 +65,6 @@ func runConfigMenu(reader *bufio.Reader, settings aibalance.GUISettings,
 	quitArmed := false
 	for {
 		fmt.Println()
-		fmt.Printf("  a) auto_refresh  %s\n", onOffLabel(settings.AutoRefresh))
 		for serviceIndex, serviceName := range aibalance.ServiceOrder {
 			fmt.Printf("  %d) %-18s %-4s refresh %s\n", serviceIndex+1,
 				aibalance.ServiceDisplayName(serviceName),
@@ -74,7 +74,7 @@ func runConfigMenu(reader *bufio.Reader, settings aibalance.GUISettings,
 		if unsavedChanges {
 			fmt.Println("  * unsaved changes — s saves, q discards")
 		}
-		fmt.Println("  <n> toggle | <n> <seconds> set interval | a auto_refresh | s save | q quit")
+		fmt.Println("  <n> toggle | <n> <seconds> set interval | s save | q quit")
 		fmt.Print("> ")
 
 		line, readErr := reader.ReadString('\n')
@@ -104,10 +104,6 @@ func runConfigMenu(reader *bufio.Reader, settings aibalance.GUISettings,
 			}
 			quitArmed = true
 			fmt.Println("  unsaved changes — q again to discard, or s to save")
-		case "a":
-			settings.AutoRefresh = !settings.AutoRefresh
-			unsavedChanges = true
-			quitArmed = false
 		default:
 			serviceIndex, convErr := strconv.Atoi(fields[0])
 			if convErr != nil || serviceIndex < 1 || serviceIndex > serviceCount {
@@ -160,7 +156,6 @@ func openSettingsInEditor() {
 // the environment fields (DeepSeek key, CDP endpoints) through untouched.
 func resolveGUISettings(base aibalance.GUISettings, enabled []bool, intervals []time.Duration) aibalance.GUISettings {
 	settings := aibalance.GUISettings{
-		AutoRefresh:    base.AutoRefresh,
 		DeepSeekAPIKey: base.DeepSeekAPIKey,
 		ChromeCDPURL:   base.ChromeCDPURL,
 		ChromeCDPURL2:  base.ChromeCDPURL2,

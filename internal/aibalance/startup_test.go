@@ -123,9 +123,6 @@ func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
 	if settings.ChromeCDPURL2 != "http://127.0.0.1:9444" {
 		t.Errorf("ChromeCDPURL2 = %q, want the migrated value", settings.ChromeCDPURL2)
 	}
-	if !settings.AutoRefresh {
-		t.Error("AutoRefresh = false, want the document's true")
-	}
 	if _, statErr := os.Stat(EnvLocalPath()); !os.IsNotExist(statErr) {
 		t.Error("fully consumed .env.local should be deleted after migration")
 	}
@@ -140,7 +137,8 @@ func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
 			Version string `json:"version"`
 		} `json:"meta"`
 		Fields struct {
-			DeepSeekAPIKey string `json:"deepseek_api_key"`
+			DeepSeekAPIKey string          `json:"deepseek_api_key"`
+			AutoRefresh    json.RawMessage `json:"auto_refresh"`
 		} `json:"fields"`
 	}
 	if decodeErr := json.Unmarshal(written, &envelope); decodeErr != nil {
@@ -152,13 +150,16 @@ func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
 	if envelope.Fields.DeepSeekAPIKey != "sk-legacy" {
 		t.Errorf("persisted deepseek_api_key = %q, want %q", envelope.Fields.DeepSeekAPIKey, "sk-legacy")
 	}
+	// The rewrite drops the retired auto_refresh key from the v1 document.
+	if len(envelope.Fields.AutoRefresh) != 0 {
+		t.Errorf("persisted auto_refresh = %s, want the key gone", envelope.Fields.AutoRefresh)
+	}
 }
 
 func TestMigrateEnvLocalAllCommentedDeletesFileWithoutRewritingSettings(t *testing.T) {
 	const settingsDocument = `{
 		"meta": {},
 		"fields": {
-			"auto_refresh": true,
 			"services": {"kimi_coding_plan": {"enabled": false, "auto_refresh_interval_seconds": 600}}
 		}
 	}`
@@ -192,7 +193,7 @@ func TestMigrateEnvLocalAllCommentedDeletesFileWithoutRewritingSettings(t *testi
 func TestMigrateEnvLocalKeepsSettingsValueWhenFieldAlreadySet(t *testing.T) {
 	writeGUISettings(t, `{
 		"meta": {},
-		"fields": {"auto_refresh": false, "deepseek_api_key": "sk-from-settings", "services": {}}
+		"fields": {"deepseek_api_key": "sk-from-settings", "services": {}}
 	}`)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-from-env\n")
 	restoreBridgeEnvironment(t)
@@ -210,7 +211,7 @@ func TestMigrateEnvLocalKeepsSettingsValueWhenFieldAlreadySet(t *testing.T) {
 }
 
 func TestMigrateEnvLocalKeepsFileOnUnknownKeys(t *testing.T) {
-	writeGUISettings(t, `{"meta": {}, "fields": {"auto_refresh": false, "services": {}}}`)
+	writeGUISettings(t, `{"meta": {}, "fields": {"services": {}}}`)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-legacy\nCUSTOM_KEY=1\n")
 	restoreBridgeEnvironment(t)
 
@@ -234,7 +235,7 @@ func TestMigrateEnvLocalKeepsFileOnUnknownKeys(t *testing.T) {
 }
 
 func TestMigrateEnvLocalSkippedWhenSettingsMalformed(t *testing.T) {
-	const brokenDocument = `{"meta": {}, "fields": {"auto_refresh": true, "services":`
+	const brokenDocument = `{"meta": {}, "fields": {"services":`
 	writeGUISettings(t, brokenDocument)
 	writeEnvLocal(t, "DEEPSEEK_API_KEY=sk-legacy\n")
 	restoreBridgeEnvironment(t)

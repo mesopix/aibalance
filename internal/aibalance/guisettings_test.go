@@ -44,9 +44,6 @@ func TestLoadGUISettingsMissingFileMaterializesExample(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGUISettings() error: %v", err)
 	}
-	if settings.AutoRefresh {
-		t.Error("AutoRefresh should default to false when the file is missing")
-	}
 	if enabled := settings.EnabledServices(); len(enabled) != 0 {
 		t.Errorf("EnabledServices() = %v, want none (all services default to disabled)", enabled)
 	}
@@ -74,8 +71,7 @@ func TestLoadGUISettingsMissingFileMaterializesExample(t *testing.T) {
 	if decodeErr != nil {
 		t.Fatalf("decode embedded example: %v", decodeErr)
 	}
-	if materialized.AutoRefresh != exampleSettings.AutoRefresh ||
-		materialized.DeepSeekAPIKey != exampleSettings.DeepSeekAPIKey ||
+	if materialized.DeepSeekAPIKey != exampleSettings.DeepSeekAPIKey ||
 		materialized.ChromeCDPURL != exampleSettings.ChromeCDPURL ||
 		materialized.ChromeCDPURL2 != exampleSettings.ChromeCDPURL2 {
 		t.Errorf("materialized settings %+v differ from example %+v", materialized, exampleSettings)
@@ -111,9 +107,6 @@ func TestEmbeddedGUISettingsExampleMatchesRegistry(t *testing.T) {
 				serviceName, setting.AutoRefreshInterval, defaultAutoRefreshInterval)
 		}
 	}
-	if settings.AutoRefresh {
-		t.Error("example should default auto_refresh to false")
-	}
 	if settings.DeepSeekAPIKey != "" {
 		t.Error("example should ship an empty deepseek_api_key so materializing stays inert")
 	}
@@ -146,9 +139,7 @@ func TestLoadGUISettingsFullDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGUISettings() error: %v", err)
 	}
-	if !settings.AutoRefresh {
-		t.Error("AutoRefresh = false, want true")
-	}
+	// The legacy auto_refresh key above is ignored: auto-refresh is always on.
 	if settings.DeepSeekAPIKey != "sk-doc" {
 		t.Errorf("DeepSeekAPIKey = %q, want %q", settings.DeepSeekAPIKey, "sk-doc")
 	}
@@ -184,7 +175,6 @@ func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 	writeGUISettings(t, `{
 		"meta": {},
 		"fields": {
-			"auto_refresh": true,
 			"services": {
 				"qwen_token_plan": {"enabled": false},
 				"kimi_coding_plan": {"auto_refresh_interval_seconds": 0},
@@ -220,7 +210,7 @@ func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 }
 
 func TestLoadGUISettingsMalformedDocument(t *testing.T) {
-	writeGUISettings(t, `{"meta": {}, "fields": {"auto_refresh": true, "services":`)
+	writeGUISettings(t, `{"meta": {}, "fields": {"services":`)
 
 	_, err := LoadGUISettings()
 	if err == nil {
@@ -230,7 +220,8 @@ func TestLoadGUISettingsMalformedDocument(t *testing.T) {
 
 // TestLoadGUISettingsV1DocumentYieldsEmptyEnvironmentFields pins the
 // version 1 compatibility: documents written before the .env.local merge
-// decode with empty environment fields.
+// decode with empty environment fields; their retired auto_refresh key is
+// ignored rather than rejected.
 func TestLoadGUISettingsV1DocumentYieldsEmptyEnvironmentFields(t *testing.T) {
 	writeGUISettings(t, `{"meta": {"version": "1"}, "fields": {"auto_refresh": false, "services": {}}}`)
 
@@ -248,7 +239,6 @@ func TestSaveGUISettingsRoundTrip(t *testing.T) {
 	useTempConfigDir(t)
 
 	saved := GUISettings{
-		AutoRefresh:    true,
 		DeepSeekAPIKey: "sk-roundtrip",
 		ChromeCDPURL:   "http://127.0.0.1:9222",
 		ChromeCDPURL2:  "http://127.0.0.1:9333",
@@ -265,9 +255,6 @@ func TestSaveGUISettingsRoundTrip(t *testing.T) {
 	loaded, err := LoadGUISettings()
 	if err != nil {
 		t.Fatalf("LoadGUISettings() error: %v", err)
-	}
-	if !loaded.AutoRefresh {
-		t.Error("AutoRefresh = false, want true")
 	}
 	if loaded.DeepSeekAPIKey != "sk-roundtrip" {
 		t.Errorf("DeepSeekAPIKey = %q, want %q", loaded.DeepSeekAPIKey, "sk-roundtrip")

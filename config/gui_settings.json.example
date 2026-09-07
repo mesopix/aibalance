@@ -3,7 +3,6 @@
     "version": "2"
   },
   "fields": {
-    "auto_refresh": false,
     "deepseek_api_key": "",
     "chrome_cdp_url": "http://127.0.0.1:9222",
     "chrome_cdp_url_2": "http://127.0.0.1:9333",
