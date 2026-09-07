@@ -159,7 +159,7 @@ func TestLoadGUISettingsFullDocument(t *testing.T) {
 		t.Errorf("ChromeCDPURL2 = %q, want the document value", settings.ChromeCDPURL2)
 	}
 
-	wantEnabled := []string{"qwen_token_plan", "bigmodel_coding_plan", "bigmodel_coding_plan_2", "z_ai_coding_plan",
+	wantEnabled := []string{"qwen_token_plan", "tencent_token_plan", "bigmodel_coding_plan", "bigmodel_coding_plan_2", "z_ai_coding_plan",
 		"kimi_coding_plan", "qoder_team_credit", "deepseek_api"}
 	enabled := settings.EnabledServices()
 	if len(enabled) != len(wantEnabled) {

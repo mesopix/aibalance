@@ -11,6 +11,7 @@ import (
 // execution order and the account ordering in summarized output.
 var ServiceOrder = []string{
 	"qwen_token_plan",
+	"tencent_token_plan",
 	"bigmodel_coding_plan",
 	"bigmodel_coding_plan_2",
 	"z_ai_coding_plan",
@@ -29,6 +30,7 @@ var serviceDisplayNames = map[string]string{
 	"kimi_coding_plan":       "Kimi Coding",
 	"qwen_token_plan":        "Qwen Token Plan",
 	"qoder_team_credit":      "Qoder Team",
+	"tencent_token_plan":     "Tencent Token Plan",
 	"chatgpt_codex":          "ChatGPT Codex",
 	"z_ai_coding_plan":       "Z.ai Coding",
 	"z_ai_coding_plan_2":     "Z.ai Coding #2",
@@ -119,6 +121,13 @@ var serviceRegistry = map[string]ServiceDefinition{
 		Summarize:       summarizeQwenTokenPlan,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       qwenTokenPlanURL,
+	},
+	"tencent_token_plan": {
+		DisplayName:     "Tencent Token Plan",
+		Run:             makeWebDashboardRunner(tencentTokenPlanURL, tencentRequiredResponses, func(options RunOptions) string { return options.CDPURL }),
+		Summarize:       summarizeTencentTokenPlan,
+		BrowserEndpoint: BrowserEndpointPrimary,
+		TargetURL:       tencentTokenPlanURL,
 	},
 	"kimi_coding_plan": {
 		DisplayName:     "Kimi Coding",

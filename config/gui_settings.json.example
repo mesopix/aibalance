@@ -9,6 +9,7 @@
     "chrome_cdp_url_2": "http://127.0.0.1:9333",
     "services": {
       "qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
+      "tencent_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
       "bigmodel_coding_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},
       "bigmodel_coding_plan_2": {"enabled": true, "auto_refresh_interval_seconds": 300},
       "z_ai_coding_plan": {"enabled": true, "auto_refresh_interval_seconds": 300},

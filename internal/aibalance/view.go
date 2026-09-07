@@ -2,6 +2,7 @@ package aibalance
 
 import (
 	"fmt"
+	"strings"
 )
 
 // ServiceView is the display-ready representation of one service summary,
@@ -89,6 +90,8 @@ func formatServiceView(serviceName string, account map[string]any) ServiceView {
 		formatCodexView(&view, account)
 	case "qwen_token_plan":
 		formatQwenView(&view, account)
+	case "tencent_token_plan":
+		formatTencentView(&view, account)
 	case "z_ai_coding_plan", "z_ai_coding_plan_2", "bigmodel_coding_plan", "bigmodel_coding_plan_2":
 		formatZAIView(&view, account)
 	}
@@ -195,6 +198,51 @@ func formatQwenView(view *ServiceView, account map[string]any) {
 	if validUntil := stringValue(account["subscription_valid_until"]); validUntil != "" {
 		view.Facts = append(view.Facts, "valid until "+FormatShortTime(validUntil))
 	}
+}
+
+// formatTencentView builds the Tencent Token Plan view. Every active plan
+// renders one monthly credit row; when both editions coexist, Hy plans take
+// the "hy monthly" label so the two rows stay distinguishable.
+func formatTencentView(view *ServiceView, account map[string]any) {
+	rawPlans, _ := account["plans"].([]any)
+	planEntries := make([]map[string]any, 0, len(rawPlans))
+	hasGeneralPlan := false
+	for _, rawPlan := range rawPlans {
+		planEntry, isMap := rawPlan.(map[string]any)
+		if !isMap {
+			continue
+		}
+		planEntries = append(planEntries, planEntry)
+		if !strings.HasPrefix(stringValue(planEntry["plan"]), "tp_hy_") {
+			hasGeneralPlan = true
+		}
+	}
+
+	for _, planEntry := range planEntries {
+		label := "monthly"
+		if hasGeneralPlan && strings.HasPrefix(stringValue(planEntry["plan"]), "tp_hy_") {
+			label = "hy monthly"
+		}
+		if quota, isMap := planEntry["monthly"].(map[string]any); isMap && len(quota) > 0 {
+			view.Quotas = append(view.Quotas, quotaViewFromMap(label, quota))
+		}
+		if fact := tencentPlanFact(planEntry); fact != "" {
+			view.Facts = append(view.Facts, fact)
+		}
+	}
+}
+
+// tencentPlanFact renders one plan's identity line, e.g.
+// "Hy Lite · valid until 10-02 16:25".
+func tencentPlanFact(planEntry map[string]any) string {
+	var segments []string
+	if level := stringValue(planEntry["plan_level"]); level != "" {
+		segments = append(segments, level)
+	}
+	if validUntil := stringValue(planEntry["subscription_valid_until"]); validUntil != "" {
+		segments = append(segments, "valid until "+FormatShortTime(validUntil))
+	}
+	return strings.Join(segments, " · ")
 }
 
 // formatZAIView builds the z.ai / BigModel view; quota rows go from the

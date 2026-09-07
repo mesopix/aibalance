@@ -26,7 +26,7 @@ aibalance 是一个单语言 Go 项目：通过常驻 CDP Chrome 抓取各 AI �
 | `browser.go` | CDP 连接（loopback 校验）、每服务专属常驻 tab（按 origin 认领，`acquireServicePage`）、`probeWebDashboard`（所有等待带超时封顶、同文档导航走 ignore-cache reload）、`makeWebDashboardRunner`、`OpenLoginPages`（TUI 按 `l` 打开登录页）。 |
 | `chromelaunch.go` + `chromelaunch_windows.go` / `chromelaunch_other.go` | Chrome 启动器：查找 Chrome、复用或 detached 启动 CDP Chrome、等待就绪。平台差异用 `//go:build` 隔离——Windows 文件提供 `chrome.exe` 目录查找与 `CREATE_NEW_PROCESS_GROUP\|DETACHED_PROCESS`，另一个文件提供 macOS bundle / PATH 查找与 `Setpgid`；共享的启动参数与 `launchChromeDetached` 留在 `chromelaunch.go`。 |
 | `collector.go` | JSON API 响应收集器（URL 关键字 + content-type 过滤、body 批量获取）。 |
-| `deepseek.go` / `zai.go` / `qwen.go` / `kimi.go` / `qoder.go` / `codex.go` | 各服务的抓取与解析（`summarize*` 纯函数）。 |
+| `deepseek.go` / `zai.go` / `qwen.go` / `kimi.go` / `qoder.go` / `codex.go` / `tencent.go` | 各服务的抓取与解析（`summarize*` 纯函数）。 |
 | `privacy.go` | `RedactText` / `RedactData` 正则脱敏（对齐原 privacy.py）。 |
 | `formatting.go` / `convert.go` | CST 时间格式化、lenient 数值转换。 |
 | `view.go` | summary → `ServiceView` / `QuotaView` 结构化视图（CLI 与 TUI 共用）。 |
