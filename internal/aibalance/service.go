@@ -20,6 +20,7 @@ var ServiceOrder = []string{
 	"kimi_coding_plan",
 	"qoder_team_credit",
 	"deepseek_api",
+	"openrouter_credits",
 }
 
 // serviceDisplayNames mirrors SERVICE_DISPLAY_NAMES in ai_balance.py.
@@ -34,6 +35,7 @@ var serviceDisplayNames = map[string]string{
 	"chatgpt_codex":          "ChatGPT Codex",
 	"z_ai_coding_plan":       "Z.ai Coding",
 	"z_ai_coding_plan_2":     "Z.ai Coding #2",
+	"openrouter_credits":     "OpenRouter",
 }
 
 // RunOptions carries CLI settings into service runners.
@@ -149,6 +151,13 @@ var serviceRegistry = map[string]ServiceDefinition{
 		Summarize:       summarizeChatGPTCodex,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       codexURLCandidates[0],
+	},
+	"openrouter_credits": {
+		DisplayName:     "OpenRouter",
+		Run:             runOpenRouterCredits,
+		Summarize:       summarizeOpenRouterCredits,
+		BrowserEndpoint: BrowserEndpointPrimary,
+		TargetURL:       openRouterCreditsURL,
 	},
 }
 

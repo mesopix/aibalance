@@ -92,6 +92,8 @@ func formatServiceView(serviceName string, account map[string]any) ServiceView {
 		formatQwenView(&view, account)
 	case "tencent_token_plan":
 		formatTencentView(&view, account)
+	case "openrouter_credits":
+		formatOpenRouterView(&view, account)
 	case "z_ai_coding_plan", "z_ai_coding_plan_2", "bigmodel_coding_plan", "bigmodel_coding_plan_2":
 		formatZAIView(&view, account)
 	}
@@ -243,6 +245,19 @@ func tencentPlanFact(planEntry map[string]any) string {
 		segments = append(segments, "valid until "+FormatShortTime(validUntil))
 	}
 	return strings.Join(segments, " · ")
+}
+
+// formatOpenRouterView builds the OpenRouter view: the pay-as-you-go
+// balance renders as a detail row — no limit exists to draw a bar against.
+func formatOpenRouterView(view *ServiceView, account map[string]any) {
+	credits, isMap := account["credits"].(map[string]any)
+	if !isMap || len(credits) == 0 {
+		view.Facts = append(view.Facts, "no balance data")
+		return
+	}
+	quota := quotaViewFromMap("credits", credits)
+	quota.Detail = "$" + trimAny(credits["remaining"]) + " available"
+	view.Quotas = append(view.Quotas, quota)
 }
 
 // formatZAIView builds the z.ai / BigModel view; quota rows go from the

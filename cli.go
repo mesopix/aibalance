@@ -118,6 +118,12 @@ func printHumanSummary(summary map[string]any) {
 		}
 		fmt.Printf("%-18s %s\n", view.Name, view.Status)
 		for _, quota := range view.Quotas {
+			// Detail rows (unlimited offers, balances without a limit) have
+			// no amounts to print and would show bare <nil> placeholders.
+			if quota.Detail != "" {
+				fmt.Printf("  %-16s %s\n", quota.Label, quota.Detail)
+				continue
+			}
 			fmt.Printf("  %-16s %v/%v | %v%% left | reset %s\n",
 				quota.Label, quota.Remaining, quota.Limit, quota.PercentLeft, quota.Reset)
 		}

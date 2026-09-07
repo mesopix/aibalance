@@ -160,7 +160,7 @@ func TestLoadGUISettingsFullDocument(t *testing.T) {
 	}
 
 	wantEnabled := []string{"qwen_token_plan", "tencent_token_plan", "bigmodel_coding_plan", "bigmodel_coding_plan_2", "z_ai_coding_plan",
-		"kimi_coding_plan", "qoder_team_credit", "deepseek_api"}
+		"kimi_coding_plan", "qoder_team_credit", "deepseek_api", "openrouter_credits"}
 	enabled := settings.EnabledServices()
 	if len(enabled) != len(wantEnabled) {
 		t.Fatalf("EnabledServices() = %v, want %v", enabled, wantEnabled)
