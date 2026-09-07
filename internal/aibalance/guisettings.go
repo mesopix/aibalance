@@ -35,8 +35,8 @@ type ServiceSetting struct {
 // GUISettings is the resolved config document: the global auto_refresh
 // switch, the environment fields (DeepSeek API key and the two CDP
 // endpoints, merged from the retired .env.local), and per-service
-// overrides. Services absent from the document fall back to enabled with
-// the default interval.
+// overrides. Services absent from the document fall back to disabled with
+// the default interval: every service is opt-in.
 type GUISettings struct {
 	AutoRefresh    bool
 	DeepSeekAPIKey string
@@ -145,7 +145,7 @@ func resolveFromDocument(document guiSettingsDocument) GUISettings {
 	settings.Services = make(map[string]ServiceSetting, len(document.Services))
 	for serviceName, serviceDocument := range document.Services {
 		setting := ServiceSetting{
-			Enabled:             true,
+			Enabled:             false,
 			AutoRefreshInterval: defaultAutoRefreshInterval,
 		}
 		if serviceDocument.Enabled != nil {
@@ -197,11 +197,12 @@ func SaveGUISettings(settings GUISettings) error {
 }
 
 // IsServiceEnabled reports whether the service participates in refresh and
-// display; unlisted services default to enabled.
+// display; unlisted services default to disabled — every service must be
+// opted in by the user.
 func (settings GUISettings) IsServiceEnabled(serviceName string) bool {
 	setting, exists := settings.Services[serviceName]
 	if !exists {
-		return true
+		return false
 	}
 	return setting.Enabled
 }

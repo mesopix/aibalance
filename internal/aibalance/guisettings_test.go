@@ -47,12 +47,12 @@ func TestLoadGUISettingsMissingFileMaterializesExample(t *testing.T) {
 	if settings.AutoRefresh {
 		t.Error("AutoRefresh should default to false when the file is missing")
 	}
-	if enabled := settings.EnabledServices(); len(enabled) != len(ServiceOrder) {
-		t.Errorf("EnabledServices() = %v, want all %d services", enabled, len(ServiceOrder))
+	if enabled := settings.EnabledServices(); len(enabled) != 0 {
+		t.Errorf("EnabledServices() = %v, want none (all services default to disabled)", enabled)
 	}
 	for _, serviceName := range ServiceOrder {
-		if !settings.IsServiceEnabled(serviceName) {
-			t.Errorf("IsServiceEnabled(%q) = false, want true by default", serviceName)
+		if settings.IsServiceEnabled(serviceName) {
+			t.Errorf("IsServiceEnabled(%q) = true, want false by default", serviceName)
 		}
 		if interval := settings.AutoRefreshInterval(serviceName); interval != defaultAutoRefreshInterval {
 			t.Errorf("AutoRefreshInterval(%q) = %v, want default %v", serviceName, interval, defaultAutoRefreshInterval)
@@ -103,8 +103,8 @@ func TestEmbeddedGUISettingsExampleMatchesRegistry(t *testing.T) {
 			t.Errorf("example is missing service %q", serviceName)
 			continue
 		}
-		if !setting.Enabled {
-			t.Errorf("example should enable %q by default", serviceName)
+		if setting.Enabled {
+			t.Errorf("example should disable %q by default (services are opt-in)", serviceName)
 		}
 		if setting.AutoRefreshInterval != defaultAutoRefreshInterval {
 			t.Errorf("example interval for %q = %v, want default %v",
@@ -159,8 +159,9 @@ func TestLoadGUISettingsFullDocument(t *testing.T) {
 		t.Errorf("ChromeCDPURL2 = %q, want the document value", settings.ChromeCDPURL2)
 	}
 
-	wantEnabled := []string{"qwen_token_plan", "tencent_token_plan", "bigmodel_coding_plan", "bigmodel_coding_plan_2", "z_ai_coding_plan",
-		"kimi_coding_plan", "qoder_team_credit", "deepseek_api", "openrouter_credits"}
+	// Only explicitly enabled services show up; unlisted ones default to
+	// disabled now that services are opt-in.
+	wantEnabled := []string{"qwen_token_plan", "deepseek_api"}
 	enabled := settings.EnabledServices()
 	if len(enabled) != len(wantEnabled) {
 		t.Fatalf("EnabledServices() = %v, want %v", enabled, wantEnabled)
@@ -200,9 +201,10 @@ func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 	if settings.IsServiceEnabled("qwen_token_plan") {
 		t.Error("IsServiceEnabled(qwen_token_plan) = true, want false")
 	}
-	// Entries without an enabled field default to enabled.
-	if !settings.IsServiceEnabled("kimi_coding_plan") {
-		t.Error("IsServiceEnabled(kimi_coding_plan) = false, want default true")
+	// Entries without an enabled field default to disabled (services are
+	// opt-in).
+	if settings.IsServiceEnabled("kimi_coding_plan") {
+		t.Error("IsServiceEnabled(kimi_coding_plan) = true, want default false")
 	}
 	// Non-positive intervals fall back to the default.
 	if interval := settings.AutoRefreshInterval("kimi_coding_plan"); interval != defaultAutoRefreshInterval {
@@ -212,8 +214,8 @@ func TestLoadGUISettingsPartialAndInvalidEntries(t *testing.T) {
 		t.Errorf("AutoRefreshInterval(qoder_team_credit) = %v, want default %v", interval, defaultAutoRefreshInterval)
 	}
 	// Unknown service IDs in the document are ignored.
-	if !settings.IsServiceEnabled("z_ai_coding_plan") {
-		t.Error("IsServiceEnabled(z_ai_coding_plan) = false, want true (unlisted)")
+	if settings.IsServiceEnabled("z_ai_coding_plan") {
+		t.Error("IsServiceEnabled(z_ai_coding_plan) = true, want false (unlisted)")
 	}
 }
 
