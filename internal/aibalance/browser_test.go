@@ -54,6 +54,35 @@ func TestRegistrableDomain(t *testing.T) {
 	}
 }
 
+// TestIsChromeNewTabURL covers the New Tab cleanup: both URL forms Chrome
+// has used for the New Tab page match, while other internal and web pages
+// do not.
+func TestIsChromeNewTabURL(t *testing.T) {
+	matching := []string{
+		"chrome://newtab/",
+		"chrome://new-tab-page",
+		"chrome://new-tab-page/",
+		"chrome://newtab/?utm_source=x",
+	}
+	for _, rawURL := range matching {
+		if !isChromeNewTabURL(rawURL) {
+			t.Errorf("isChromeNewTabURL(%q) = false, want true", rawURL)
+		}
+	}
+	nonMatching := []string{
+		"chrome://settings/",
+		"chrome://newtab-something/",
+		"https://z.ai/usage",
+		"about:blank",
+		"",
+	}
+	for _, rawURL := range nonMatching {
+		if isChromeNewTabURL(rawURL) {
+			t.Errorf("isChromeNewTabURL(%q) = true, want false", rawURL)
+		}
+	}
+}
+
 // TestSameDocumentTarget covers the reload decision: equal scheme, host,
 // and path count as the same document regardless of query or hash, while
 // any path difference requires a real navigation.

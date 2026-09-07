@@ -309,13 +309,15 @@ func claimServiceTarget(browser *rod.Browser, targetURL string) (proto.TargetTar
 	// First pass claims by exact origin; page targets that miss are kept for
 	// the registrable-domain fallback below.
 	targetOrigin := urlOrigin(targetURL)
+	var claimedTargetID proto.TargetTargetID
 	pageTargets := []*proto.TargetTargetInfo{}
 	for _, targetInfo := range targets.TargetInfos {
 		if targetInfo.Type != proto.TargetTargetInfoTypePage || isSpecialPageURL(targetInfo.URL) {
 			continue
 		}
 		if urlOrigin(targetInfo.URL) == targetOrigin {
-			return targetInfo.TargetID, nil
+			claimedTargetID = targetInfo.TargetID
+			break
 		}
 		pageTargets = append(pageTargets, targetInfo)
 	}
@@ -326,25 +328,65 @@ func claimServiceTarget(browser *rod.Browser, targetURL string) (proto.TargetTar
 	// back to the registrable domain: each automation Chrome hosts at most
 	// one service per registrable domain, so the redirected tab still
 	// belongs to this service.
-	targetDomain := registrableDomain(targetURL)
-	if targetDomain != "" {
-		for _, targetInfo := range pageTargets {
-			if registrableDomain(targetInfo.URL) == targetDomain {
-				return targetInfo.TargetID, nil
+	if claimedTargetID == "" {
+		targetDomain := registrableDomain(targetURL)
+		if targetDomain != "" {
+			for _, targetInfo := range pageTargets {
+				if registrableDomain(targetInfo.URL) == targetDomain {
+					claimedTargetID = targetInfo.TargetID
+					break
+				}
 			}
 		}
 	}
 
 	// Background: true opens the tab without activating it, so refreshes
 	// never bring the automation Chrome window to the foreground.
-	createdTarget, createErr := proto.TargetCreateTarget{
-		URL:        targetURL,
-		Background: true,
-	}.Call(boundedBrowser)
-	if createErr != nil {
-		return "", fmt.Errorf("create target: %w", createErr)
+	if claimedTargetID == "" {
+		createdTarget, createErr := proto.TargetCreateTarget{
+			URL:        targetURL,
+			Background: true,
+		}.Call(boundedBrowser)
+		if createErr != nil {
+			return "", fmt.Errorf("create target: %w", createErr)
+		}
+		claimedTargetID = createdTarget.TargetID
 	}
-	return createdTarget.TargetID, nil
+
+	// The claimed service tab now keeps the browser alive, so the New Tab
+	// page every launch opens can finally be closed; closing it any earlier
+	// would quit a headed Chrome whose only tab it was.
+	closeNewTabTargets(boundedBrowser, targets)
+	return claimedTargetID, nil
+}
+
+// closeNewTabTargets closes the browser's New Tab pages. Chrome opens one
+// on launch and the URL shape varies by version, so both known forms match.
+// Best-effort: failures leave a harmless idle tab behind.
+func closeNewTabTargets(boundedBrowser *rod.Browser, targets *proto.TargetGetTargetsResult) {
+	for _, targetInfo := range targets.TargetInfos {
+		if targetInfo.Type != proto.TargetTargetInfoTypePage || !isChromeNewTabURL(targetInfo.URL) {
+			continue
+		}
+		_, _ = proto.TargetCloseTarget{TargetID: targetInfo.TargetID}.Call(boundedBrowser)
+	}
+}
+
+// isChromeNewTabURL reports whether a tab URL is Chrome's New Tab page.
+// The prefix must end the URL or be followed by '/', '?' or '#': a bare
+// prefix would also match unrelated chrome://newtab-* pages.
+func isChromeNewTabURL(rawURL string) bool {
+	loweredURL := strings.ToLower(rawURL)
+	for _, prefix := range []string{"chrome://newtab", "chrome://new-tab-page"} {
+		if !strings.HasPrefix(loweredURL, prefix) {
+			continue
+		}
+		remainder := loweredURL[len(prefix):]
+		if remainder == "" || remainder[0] == '/' || remainder[0] == '?' || remainder[0] == '#' {
+			return true
+		}
+	}
+	return false
 }
 
 // evalString evaluates a JavaScript expression returning a string. The
