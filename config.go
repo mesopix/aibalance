@@ -41,6 +41,17 @@ func runConfig(args []string) {
 		os.Exit(1)
 	}
 
+	if menuErr := runConfigMenu(bufio.NewReader(os.Stdin), settings, aibalance.SaveGUISettings); menuErr != nil {
+		fmt.Fprintf(os.Stderr, "save config.json: %v\n", menuErr)
+		os.Exit(1)
+	}
+}
+
+// runConfigMenu drives the interactive config editor loop until the user
+// saves or quits. Edits set unsavedChanges, so a lone q never discards them
+// silently: it asks for a second q to confirm, and EOF reports the discard.
+func runConfigMenu(reader *bufio.Reader, settings aibalance.GUISettings,
+	saveSettings func(aibalance.GUISettings) error) error {
 	serviceCount := len(aibalance.ServiceOrder)
 	enabled := make([]bool, serviceCount)
 	intervals := make([]time.Duration, serviceCount)
@@ -49,7 +60,8 @@ func runConfig(args []string) {
 		intervals[serviceIndex] = settings.AutoRefreshInterval(serviceName)
 	}
 
-	reader := bufio.NewReader(os.Stdin)
+	unsavedChanges := false
+	quitArmed := false
 	for {
 		fmt.Println()
 		fmt.Printf("  a) auto_refresh  %s\n", onOffLabel(settings.AutoRefresh))
@@ -59,12 +71,19 @@ func runConfig(args []string) {
 				onOffLabel(enabled[serviceIndex]),
 				intervals[serviceIndex].Round(time.Second))
 		}
+		if unsavedChanges {
+			fmt.Println("  * unsaved changes — s saves, q discards")
+		}
 		fmt.Println("  <n> toggle | <n> <seconds> set interval | a auto_refresh | s save | q quit")
 		fmt.Print("> ")
 
 		line, readErr := reader.ReadString('\n')
 		if readErr != nil {
-			return // EOF or closed stdin: quit without saving
+			// EOF or closed stdin: quit without saving, but not silently.
+			if unsavedChanges {
+				fmt.Fprintln(os.Stderr, "config.json not saved: unsaved changes discarded")
+			}
+			return nil
 		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -73,17 +92,22 @@ func runConfig(args []string) {
 
 		switch fields[0] {
 		case "s":
-			saveErr := aibalance.SaveGUISettings(resolveGUISettings(settings, enabled, intervals))
+			saveErr := saveSettings(resolveGUISettings(settings, enabled, intervals))
 			if saveErr != nil {
-				fmt.Fprintf(os.Stderr, "save config.json: %v\n", saveErr)
-				os.Exit(1)
+				return saveErr
 			}
 			fmt.Printf("saved %s\n", aibalance.GUISettingsPath())
-			return
+			return nil
 		case "q":
-			return
+			if !unsavedChanges || quitArmed {
+				return nil
+			}
+			quitArmed = true
+			fmt.Println("  unsaved changes — q again to discard, or s to save")
 		case "a":
 			settings.AutoRefresh = !settings.AutoRefresh
+			unsavedChanges = true
+			quitArmed = false
 		default:
 			serviceIndex, convErr := strconv.Atoi(fields[0])
 			if convErr != nil || serviceIndex < 1 || serviceIndex > serviceCount {
@@ -92,6 +116,8 @@ func runConfig(args []string) {
 			}
 			if len(fields) == 1 {
 				enabled[serviceIndex-1] = !enabled[serviceIndex-1]
+				unsavedChanges = true
+				quitArmed = false
 				continue
 			}
 			seconds, secondsErr := strconv.Atoi(fields[1])
@@ -100,6 +126,8 @@ func runConfig(args []string) {
 				continue
 			}
 			intervals[serviceIndex-1] = time.Duration(seconds) * time.Second
+			unsavedChanges = true
+			quitArmed = false
 		}
 	}
 }

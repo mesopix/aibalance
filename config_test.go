@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,5 +33,82 @@ func TestResolveGUISettingsCarriesEnvironmentFields(t *testing.T) {
 	}
 	if !resolved.AutoRefresh {
 		t.Error("AutoRefresh = false, want the base value")
+	}
+}
+
+// TestRunConfigMenuDiscardNeedsSecondQuit guards the anti-data-loss guard:
+// after an edit, the first q only warns; the second discards without saving.
+func TestRunConfigMenuDiscardNeedsSecondQuit(t *testing.T) {
+	saveCalls := 0
+	saveSettings := func(aibalance.GUISettings) error { saveCalls++; return nil }
+
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("a\nq\nq\n")),
+		aibalance.GUISettings{}, saveSettings)
+
+	if menuErr != nil {
+		t.Fatalf("runConfigMenu error: %v", menuErr)
+	}
+	if saveCalls != 0 {
+		t.Errorf("save called %d times, want 0 (edits discarded)", saveCalls)
+	}
+}
+
+// TestRunConfigMenuCleanQuitExitsImmediately verifies a lone q still quits
+// right away when nothing was edited; unrecognized commands must not count
+// as edits.
+func TestRunConfigMenuCleanQuitExitsImmediately(t *testing.T) {
+	saveCalls := 0
+	saveSettings := func(aibalance.GUISettings) error { saveCalls++; return nil }
+
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("nope\nq\n")),
+		aibalance.GUISettings{}, saveSettings)
+
+	if menuErr != nil {
+		t.Fatalf("runConfigMenu error: %v", menuErr)
+	}
+	if saveCalls != 0 {
+		t.Errorf("save called %d times, want 0", saveCalls)
+	}
+}
+
+// TestRunConfigMenuSaveAfterQuitWarning verifies s still saves after the
+// discard warning, carrying the in-menu auto_refresh toggle into the save.
+func TestRunConfigMenuSaveAfterQuitWarning(t *testing.T) {
+	saveCalls := 0
+	var lastSaved aibalance.GUISettings
+	saveSettings := func(settings aibalance.GUISettings) error {
+		saveCalls++
+		lastSaved = settings
+		return nil
+	}
+
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("a\nq\ns\n")),
+		aibalance.GUISettings{}, saveSettings)
+
+	if menuErr != nil {
+		t.Fatalf("runConfigMenu error: %v", menuErr)
+	}
+	if saveCalls != 1 {
+		t.Fatalf("save called %d times, want 1", saveCalls)
+	}
+	if !lastSaved.AutoRefresh {
+		t.Error("saved AutoRefresh = false, want true (toggled in the menu)")
+	}
+}
+
+// TestRunConfigMenuEOFWithEditsDoesNotSave verifies EOF after edits exits
+// the menu without invoking the saver.
+func TestRunConfigMenuEOFWithEditsDoesNotSave(t *testing.T) {
+	saveCalls := 0
+	saveSettings := func(aibalance.GUISettings) error { saveCalls++; return nil }
+
+	menuErr := runConfigMenu(bufio.NewReader(strings.NewReader("1\n")),
+		aibalance.GUISettings{}, saveSettings)
+
+	if menuErr != nil {
+		t.Fatalf("runConfigMenu error: %v", menuErr)
+	}
+	if saveCalls != 0 {
+		t.Errorf("save called %d times, want 0", saveCalls)
 	}
 }
