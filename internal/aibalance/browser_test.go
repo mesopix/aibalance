@@ -24,6 +24,36 @@ func TestURLOrigin(t *testing.T) {
 	}
 }
 
+// TestRegistrableDomain covers the claim fallback: login redirects land on
+// sibling subdomains (chat.z.ai/auth for z.ai, cloud.tencent.com/login for
+// the Tencent console) that must resolve to the same registrable domain as
+// the dashboard, while single-label hosts and non-web URLs claim nothing.
+func TestRegistrableDomain(t *testing.T) {
+	cases := []struct {
+		name     string
+		rawURL   string
+		expected string
+	}{
+		{"plain https", "https://z.ai/usage", "z.ai"},
+		{"auth redirect", "https://chat.z.ai/auth?response_type=code", "z.ai"},
+		{"console on subdomain", "https://console.cloud.tencent.com/tokenhub/tokenplan", "tencent.com"},
+		{"login redirect", "https://cloud.tencent.com/login?s_url=x", "tencent.com"},
+		{"aliyun console", "https://bailian.console.aliyun.com/cn-beijing", "aliyun.com"},
+		{"mixed case host", "https://OpenRouter.AI/settings/credits", "openrouter.ai"},
+		{"fqdn trailing dot", "https://qoder.com./account/usage", "qoder.com"},
+		{"single label host", "http://localhost:9222/json/list", ""},
+		{"about blank", "about:blank", ""},
+		{"chrome internal", "chrome://newtab/", ""},
+		{"empty", "", ""},
+	}
+	for _, testCase := range cases {
+		if actual := registrableDomain(testCase.rawURL); actual != testCase.expected {
+			t.Errorf("%s: registrableDomain(%q) = %q, want %q",
+				testCase.name, testCase.rawURL, actual, testCase.expected)
+		}
+	}
+}
+
 // TestSameDocumentTarget covers the reload decision: equal scheme, host,
 // and path count as the same document regardless of query or hash, while
 // any path difference requires a real navigation.

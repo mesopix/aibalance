@@ -124,11 +124,12 @@ func makeWebDashboardRunner(targetURL string, requiredResponses []string, cdpSel
 	}
 }
 
-// OpenLoginPages opens one foreground tab per service on its automation
+// OpenLoginPages brings each service's tab to the front on its automation
 // Chrome, navigated to the service's dashboard page — the site's login flow
-// takes over from there. Tabs stay open for interactive login; the caller
-// refreshes afterwards to pick up the new session. Disconnecting when ctx
-// ends does not close Chrome or the tabs.
+// takes over from there. The service's persistent tab is reused (created on
+// first press), so pressing l never strands duplicate tabs. Tabs stay open
+// for interactive login; the caller refreshes afterwards to pick up the new
+// session. Disconnecting when ctx ends does not close Chrome or the tabs.
 func OpenLoginPages(ctx context.Context, services []string, options RunOptions) error {
 	type loginTarget struct {
 		cdpURL    string
@@ -174,10 +175,29 @@ func OpenLoginPages(ctx context.Context, services []string, options RunOptions) 
 			continue
 		}
 		for _, targetURL := range targetURLsByEndpoint[cdpURL] {
-			// Background stays false so the tab is created active and the
-			// login page is immediately visible to the user.
-			if _, createErr := browser.Page(proto.TargetCreateTarget{URL: targetURL}); createErr != nil {
-				openErrs = append(openErrs, fmt.Errorf("open %s: %w", targetURL, createErr))
+			// Claim (creating on first press) instead of blindly opening a
+			// tab: an unconditional create would strand the previous one as
+			// a permanent duplicate. Navigating back to the dashboard URL
+			// re-triggers the site's login redirect when the session is gone.
+			claimedTarget, claimErr := claimServiceTarget(browser, targetURL)
+			if claimErr != nil {
+				openErrs = append(openErrs, fmt.Errorf("open %s: %w", targetURL, claimErr))
+				continue
+			}
+			page, attachErr := browser.PageFromTarget(claimedTarget)
+			if attachErr != nil {
+				openErrs = append(openErrs, fmt.Errorf("open %s: %w", targetURL, attachErr))
+				continue
+			}
+			boundedPage := page.Timeout(pageClaimTimeout)
+			if navErr := boundedPage.Navigate(targetURL); navErr != nil {
+				openErrs = append(openErrs, fmt.Errorf("open %s: %w", targetURL, navErr))
+				continue
+			}
+			// Login is interactive, so the tab must come to the front —
+			// claimed tabs may sit in a background window.
+			if _, activateErr := boundedPage.Activate(); activateErr != nil {
+				openErrs = append(openErrs, fmt.Errorf("open %s: %w", targetURL, activateErr))
 			}
 		}
 	}
@@ -191,6 +211,27 @@ func isSpecialPageURL(rawURL string) bool {
 	return strings.HasPrefix(loweredURL, "chrome://") ||
 		strings.HasPrefix(loweredURL, "devtools://") ||
 		strings.HasPrefix(loweredURL, "edge://")
+}
+
+// registrableDomain approximates the eTLD+1 by taking the last two host
+// labels (chat.z.ai → z.ai, console.cloud.tencent.com → tencent.com), used
+// as the claim fallback when sites redirect logged-out tabs off-origin.
+// Single-label hosts and non-web URLs return "": localhost ports are
+// distinct origins that must never share a tab, and internal pages claim
+// nothing.
+func registrableDomain(rawURL string) string {
+	parsedURL, parseErr := url.Parse(rawURL)
+	if parseErr != nil ||
+		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
+		parsedURL.Host == "" {
+		return ""
+	}
+	hostname := strings.ToLower(strings.TrimSuffix(parsedURL.Hostname(), "."))
+	labels := strings.Split(hostname, ".")
+	if len(labels) < 2 {
+		return ""
+	}
+	return labels[len(labels)-2] + "." + labels[len(labels)-1]
 }
 
 // urlOrigin extracts the scheme://host[:port] prefix for web URLs, or ""
@@ -248,12 +289,13 @@ func acquireServicePage(browser *rod.Browser, targetURL string) (*rod.Page, erro
 }
 
 // claimServiceTarget returns the tab claimed for the service, creating one
-// when no tab matches. Tabs are claimed by origin: SPAs rewrite path and
-// query after load, and each automation Chrome hosts at most one service per
-// origin. Target infos already carry the tab URL, so the scan attaches to
-// nothing — rod's Pages() attaches to and re-emulates every tab in the
-// Chrome, which blocks on tabs other services are navigating right now and
-// rewrites their viewport and user agent.
+// when no tab matches. Tabs are claimed by exact origin first, then by
+// registrable domain (SPAs rewrite path and query after load, and logged-out
+// tabs get redirected off-origin); each automation Chrome hosts at most one
+// service per registrable domain. Target infos already carry the tab URL, so
+// the scan attaches to nothing — rod's Pages() attaches to and re-emulates
+// every tab in the Chrome, which blocks on tabs other services are
+// navigating right now and rewrites their viewport and user agent.
 func claimServiceTarget(browser *rod.Browser, targetURL string) (proto.TargetTargetID, error) {
 	pageClaimMutex.Lock()
 	defer pageClaimMutex.Unlock()
@@ -264,13 +306,32 @@ func claimServiceTarget(browser *rod.Browser, targetURL string) (proto.TargetTar
 		return "", fmt.Errorf("list targets: %w", listErr)
 	}
 
+	// First pass claims by exact origin; page targets that miss are kept for
+	// the registrable-domain fallback below.
 	targetOrigin := urlOrigin(targetURL)
+	pageTargets := []*proto.TargetTargetInfo{}
 	for _, targetInfo := range targets.TargetInfos {
 		if targetInfo.Type != proto.TargetTargetInfoTypePage || isSpecialPageURL(targetInfo.URL) {
 			continue
 		}
 		if urlOrigin(targetInfo.URL) == targetOrigin {
 			return targetInfo.TargetID, nil
+		}
+		pageTargets = append(pageTargets, targetInfo)
+	}
+
+	// Sites redirect logged-out tabs off-origin (z.ai → chat.z.ai/auth,
+	// console.cloud.tencent.com → cloud.tencent.com/login), so the exact
+	// scan above misses them and every pass would open another tab. Fall
+	// back to the registrable domain: each automation Chrome hosts at most
+	// one service per registrable domain, so the redirected tab still
+	// belongs to this service.
+	targetDomain := registrableDomain(targetURL)
+	if targetDomain != "" {
+		for _, targetInfo := range pageTargets {
+			if registrableDomain(targetInfo.URL) == targetDomain {
+				return targetInfo.TargetID, nil
+			}
 		}
 	}
 
