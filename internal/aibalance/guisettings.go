@@ -74,28 +74,69 @@ func userConfigDirectory() string {
 	return UserConfigDirectory()
 }
 
+// assembleConfigManager builds a Manager bound to <user config
+// dir>/aibalance/config.json with the embedded example as the first-run
+// template, and registers the version chain so Load validates or upgrades
+// legacy documents on disk.
+func assembleConfigManager() (*configmanager.Manager, error) {
+	manager := configmanager.NewManager()
+	if err := manager.Init("", appName, ""); err != nil {
+		return nil, err
+	}
+	if err := manager.RegisterDefaults(config.GUISettingsExample); err != nil {
+		return nil, err
+	}
+	if err := manager.SetCurrentVersion(guiSettingsSchemaVersion); err != nil {
+		return nil, err
+	}
+	// v1 predates the environment fields and versionless documents predate
+	// the schema version itself; both keep their fields because absent
+	// keys decode to the fallbacks resolveFromDocument already applies.
+	keepFields := func(fields map[string]any) (map[string]any, error) {
+		return fields, nil
+	}
+	if err := manager.RegisterUpgrader("1", guiSettingsSchemaVersion, keepFields); err != nil {
+		return nil, err
+	}
+	if err := manager.RegisterUpgrader(configmanager.UnknownVersion, guiSettingsSchemaVersion, keepFields); err != nil {
+		return nil, err
+	}
+	return manager, nil
+}
+
 // LoadGUISettings reads config.json via go-config-manager. A missing file
 // is materialized from the embedded example before parsing, making that
-// example the single source of defaults. Corrupt files surface as
+// example the single source of defaults, and documents at an older schema
+// version are upgraded and written back. Corrupt files surface as
 // *configmanager.CorruptConfigError; callers must treat this as fatal
 // rather than falling back to defaults.
 func LoadGUISettings() (GUISettings, error) {
-	manager, err := configmanager.LoadAppConfig(appName, config.GUISettingsExample)
-	if err != nil {
+	manager, assembleErr := assembleConfigManager()
+	if assembleErr != nil {
+		return fallbackSettingsWithError(assembleErr)
+	}
+	loaded, loadErr := manager.Load()
+	if loadErr != nil {
 		var corruptErr *configmanager.CorruptConfigError
-		if errors.As(err, &corruptErr) {
-			return GUISettings{}, err
+		if errors.As(loadErr, &corruptErr) {
+			return GUISettings{}, loadErr
 		}
-		fallback, decodeErr := decodeGUISettings(config.GUISettingsExample)
-		return fallback, errors.Join(err, decodeErr)
+		return fallbackSettingsWithError(loadErr)
 	}
 
-	settings, decodeErr := decodeFromManager(manager)
+	settings, decodeErr := decodeFromManager(loaded)
 	if decodeErr != nil {
-		fallback, fallbackErr := decodeGUISettings(config.GUISettingsExample)
-		return fallback, errors.Join(decodeErr, fallbackErr)
+		return fallbackSettingsWithError(decodeErr)
 	}
 	return settings, nil
+}
+
+// fallbackSettingsWithError decodes the embedded example as the settings
+// fallback for non-fatal load failures and joins the triggering error;
+// callers warn and continue with the defaults.
+func fallbackSettingsWithError(loadErr error) (GUISettings, error) {
+	fallback, decodeErr := decodeGUISettings(config.GUISettingsExample)
+	return fallback, errors.Join(loadErr, decodeErr)
 }
 
 // decodeFromManager extracts the fields layer from a loaded Config and
@@ -161,8 +202,9 @@ func resolveFromDocument(document guiSettingsDocument) GUISettings {
 
 // SaveGUISettings writes config.json atomically via go-config-manager,
 // materializing every known service's resolved setting; service IDs
-// outside ServiceOrder are dropped. The meta.version is always set to
-// guiSettingsSchemaVersion so migrated documents carry the current schema.
+// outside ServiceOrder are dropped. The loaded config already carries the
+// current meta.version: fresh files come from the versioned template and
+// legacy files are promoted by the version chain during Load.
 func SaveGUISettings(settings GUISettings) error {
 	document := guiSettingsDocument{
 		DeepSeekAPIKey: settings.DeepSeekAPIKey,
@@ -179,18 +221,18 @@ func SaveGUISettings(settings GUISettings) error {
 		}
 	}
 
-	manager, err := configmanager.LoadAppConfig(appName, config.GUISettingsExample)
+	manager, err := assembleConfigManager()
 	if err != nil {
 		return fmt.Errorf("load config for save: %w", err)
 	}
-	if setErr := manager.SetFieldsFrom(document); setErr != nil {
+	loaded, loadErr := manager.Load()
+	if loadErr != nil {
+		return fmt.Errorf("load config for save: %w", loadErr)
+	}
+	if setErr := loaded.SetFieldsFrom(document); setErr != nil {
 		return setErr
 	}
-	// Always stamp the current schema version on save so migrated v1
-	// documents are promoted and future loads see the correct version.
-	meta := manager.Meta()
-	meta["version"] = guiSettingsSchemaVersion
-	return manager.Save()
+	return loaded.Save()
 }
 
 // IsServiceEnabled reports whether the service participates in refresh and

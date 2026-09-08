@@ -1,6 +1,7 @@
 package aibalance
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -232,6 +233,65 @@ func TestLoadGUISettingsV1DocumentYieldsEmptyEnvironmentFields(t *testing.T) {
 	if settings.DeepSeekAPIKey != "" || settings.ChromeCDPURL != "" || settings.ChromeCDPURL2 != "" {
 		t.Errorf("version 1 document decoded environment fields (%q, %q, %q), want all empty",
 			settings.DeepSeekAPIKey, settings.ChromeCDPURL, settings.ChromeCDPURL2)
+	}
+}
+
+// TestLoadGUISettingsPromotesLegacyVersionsOnDisk pins the versioned-load
+// behavior of go-config-manager: documents at an older schema version (or
+// without one) are upgraded in memory and written back with the current
+// meta.version, keeping their fields untouched.
+func TestLoadGUISettingsPromotesLegacyVersionsOnDisk(t *testing.T) {
+	testCases := []struct {
+		name     string
+		document string
+	}{
+		{
+			name:     "version 1",
+			document: `{"meta": {"version": "1"}, "fields": {"services": {"qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 120}}}}`,
+		},
+		{
+			name:     "versionless",
+			document: `{"meta": {}, "fields": {"services": {"qwen_token_plan": {"enabled": true, "auto_refresh_interval_seconds": 120}}}}`,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			writeGUISettings(t, testCase.document)
+
+			settings, err := LoadGUISettings()
+			if err != nil {
+				t.Fatalf("LoadGUISettings() error: %v", err)
+			}
+			if !settings.IsServiceEnabled("qwen_token_plan") {
+				t.Error("IsServiceEnabled(qwen_token_plan) = false, want fields preserved by the upgrade")
+			}
+
+			written, readErr := os.ReadFile(GUISettingsPath())
+			if readErr != nil {
+				t.Fatalf("read promoted config.json: %v", readErr)
+			}
+			var envelope struct {
+				Meta struct {
+					Version string `json:"version"`
+				} `json:"meta"`
+				Fields struct {
+					Services map[string]struct {
+						Enabled                    bool `json:"enabled"`
+						AutoRefreshIntervalSeconds int  `json:"auto_refresh_interval_seconds"`
+					} `json:"services"`
+				} `json:"fields"`
+			}
+			if decodeErr := json.Unmarshal(written, &envelope); decodeErr != nil {
+				t.Fatalf("promoted config.json does not parse: %v", decodeErr)
+			}
+			if envelope.Meta.Version != guiSettingsSchemaVersion {
+				t.Errorf("promoted meta.version = %q, want %q", envelope.Meta.Version, guiSettingsSchemaVersion)
+			}
+			service, exists := envelope.Fields.Services["qwen_token_plan"]
+			if !exists || !service.Enabled || service.AutoRefreshIntervalSeconds != 120 {
+				t.Errorf("promoted fields lost the original service entry: %+v", envelope.Fields.Services)
+			}
+		})
 	}
 }
 

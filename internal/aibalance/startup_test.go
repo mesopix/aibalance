@@ -157,8 +157,11 @@ func TestMigrateEnvLocalMergesValuesAndDeletesFile(t *testing.T) {
 }
 
 func TestMigrateEnvLocalAllCommentedDeletesFileWithoutRewritingSettings(t *testing.T) {
+	// The document carries the current schema version: the version chain
+	// rewrites legacy (v1 or versionless) documents during Load itself, so
+	// only a current-version file pins "no rewrite when nothing changed".
 	const settingsDocument = `{
-		"meta": {},
+		"meta": {"version": "2"},
 		"fields": {
 			"services": {"kimi_coding_plan": {"enabled": false, "auto_refresh_interval_seconds": 600}}
 		}
