@@ -1,6 +1,9 @@
 package aibalance
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestExtractBankedResetCountEnglishText(t *testing.T) {
 	cases := []struct {
@@ -137,6 +140,55 @@ func TestSummarizeCodexWeeklyAndCredits(t *testing.T) {
 	}
 	if summary["turns"] != 1000 {
 		t.Errorf("turns = %v, want 1000", summary["turns"])
+	}
+}
+
+// TestCodexRequiredResponsesMatchAnalyticsURLs guards the fragments against
+// typos: each must match a URL the analytics page was observed to request,
+// and that URL must pass the collector's keyword filter, or the wait would
+// silently degrade to the quiet-window fallback.
+func TestCodexRequiredResponsesMatchAnalyticsURLs(t *testing.T) {
+	observedURLs := []string{
+		"https://chatgpt.com/backend-api/wham/usage",
+		"https://chatgpt.com/backend-api/wham/usage/daily-token-usage-breakdown?start_date=2026-08-25&end_date=2026-09-23&group_by=day",
+		"https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+		"https://chatgpt.com/backend-api/amphora/notifications?limit=20",
+	}
+	for _, fragment := range codexRequiredResponses {
+		matched := false
+		for _, observedURL := range observedURLs {
+			if strings.Contains(observedURL, fragment) && matchesResponseKeyword(observedURL) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("required fragment %q matches no captured analytics URL", fragment)
+		}
+	}
+}
+
+// TestCodexRenderedTextUsable guards the render-wait predicate: it must fire
+// on the real analytics card text and stay quiet on nav-only shells, or the
+// wait would end before the usage values exist.
+func TestCodexRenderedTextUsable(t *testing.T) {
+	rendered := "Codex and Work Analytics\n7D\n1M\nUsage\nBalance\n\n" +
+		"Codex and Work share the same usage limit.\n\nWeekly usage limit\n\n92%\nremaining\n" +
+		"Resets Sep 29, 2026 5:42 PM\n\nCredits remaining\n\n0\nTurns\n761"
+	if !codexRenderedTextUsable(rendered) {
+		t.Error("rendered analytics text should be usable")
+	}
+
+	shellOnly := "Code\nSecurity\nApp\nDocs\nPRO\nSettings\nGeneral\nEnvironments\n" +
+		"Code review\nConnectors\nAnalytics\nData controls\nAccess tokens\nCodex and Work Analytics"
+	if codexRenderedTextUsable(shellOnly) {
+		t.Error("nav-only shell should not be usable")
+	}
+	if codexRenderedTextUsable("") {
+		t.Error("empty text should not be usable")
+	}
+	if !codexRenderedTextUsable("2 banked resets available") {
+		t.Error("banked resets text should be usable")
 	}
 }
 

@@ -27,6 +27,10 @@ const (
 	// captureQuietWindow is how long captures must stop arriving before the
 	// wait gives up on a required response the dashboard never requests.
 	captureQuietWindow = 2 * time.Second
+	// profileCollectorTimeout bounds the whole best-effort profile-menu
+	// collection, including the usage-text render wait: on a busy renderer
+	// its CDP calls can hang, stalling the pass until the context dies.
+	profileCollectorTimeout = 30 * time.Second
 )
 
 // assertLoopbackCDPURL refuses non-loopback CDP endpoints, mirroring
@@ -534,7 +538,10 @@ func probeWebDashboard(ctx context.Context, page *rod.Page, targetURL string, ti
 
 	profileUsageText := ""
 	if profileCollector != nil && !detectLoginHint(currentURL, initialBodyText) {
-		profileUsageText = profileCollector(page)
+		// The collector runs best-effort on a timeout-bounded clone: its
+		// Elements/Click calls would otherwise hang on a busy renderer until
+		// the pass context expires and fail every later eval.
+		profileUsageText = profileCollector(page.Timeout(profileCollectorTimeout))
 	}
 
 	finalBodyText, finalTextErr := evalString(page, `() => document.body ? document.body.innerText : ""`)

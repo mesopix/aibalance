@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
-	"github.com/go-rod/rod/lib/proto"
 )
 
 // codexURLCandidates mirrors CODEX_URL_CANDIDATES in ai_balance.py.
@@ -21,6 +20,14 @@ var codexURLCandidates = []string{
 	"https://chatgpt.com/codex/settings",
 	"https://chatgpt.com/codex",
 	"https://chatgpt.com/",
+}
+
+// codexRequiredResponses names the analytics XHRs the Codex usage page fires
+// on every load; their arrival implies the dashboard data has been fetched.
+var codexRequiredResponses = []string{
+	"wham/usage",
+	"wham/usage/daily-token-usage-breakdown",
+	"wham/rate-limit-reset-credits",
 }
 
 // codexNote mirrors the note attached when no URL candidate yields usage.
@@ -115,7 +122,7 @@ func runCodexService(ctx context.Context, options RunOptions) map[string]any {
 
 	var attempts []map[string]any
 	for _, candidateURL := range codexURLCandidates {
-		attempt := probeWebDashboard(ctx, page, candidateURL, options.TimeoutMS, options.WaitMS, nil, collectCodexProfileUsageText)
+		attempt := probeWebDashboard(ctx, page, candidateURL, options.TimeoutMS, options.WaitMS, codexRequiredResponses, collectCodexProfileUsageText)
 		attempts = append(attempts, attempt)
 		if codexUsageSignal(attempt) {
 			attempt["tried_urls"] = triedURLs(attempts)
@@ -499,6 +506,11 @@ var digitsOnlyPattern = regexp.MustCompile(`^\d{1,9}$`)
 // open the profile menu, read it, optionally follow the usage link, then
 // close the menu with Escape. Best-effort throughout.
 func collectCodexProfileUsageText(page *rod.Page) string {
+	// The analytics SPA renders its usage card well after its XHRs land, and
+	// background tabs render slower still; wait so the text reads don't race
+	// the render and burn through the remaining URL candidates on empty text.
+	waitForCodexUsageText(page)
+
 	if !clickFirstVisible(page, codexProfileControlSelectors) {
 		return ""
 	}
@@ -516,8 +528,6 @@ func collectCodexProfileUsageText(page *rod.Page) string {
 
 	if extractBankedResetCountFromText(menuText) == nil && clickFirstVisible(page, codexUsageControlSelectors) {
 		time.Sleep(500 * time.Millisecond)
-		// Usage panels can keep background requests open; idle is best-effort.
-		_ = page.WaitRequestIdle(3*time.Second, nil, nil, nil)
 		usageText := readVisibleBodyText(page)
 		if usageText != "" && !containsString(capturedTexts, usageText) {
 			capturedTexts = append(capturedTexts, usageText)
@@ -527,8 +537,37 @@ func collectCodexProfileUsageText(page *rod.Page) string {
 	return strings.Join(capturedTexts, "\n")
 }
 
+// codexRenderPollInterval is how often waitForCodexUsageText re-reads the page.
+const codexRenderPollInterval = 500 * time.Millisecond
+
+// waitForCodexUsageText polls the rendered body text until the summarizer has
+// something to parse, or the (bounded) page context expires.
+func waitForCodexUsageText(page *rod.Page) {
+	for {
+		if codexRenderedTextUsable(readVisibleBodyText(page)) {
+			return
+		}
+		select {
+		case <-time.After(codexRenderPollInterval):
+		case <-page.GetContext().Done():
+			return
+		}
+	}
+}
+
+// codexRenderedTextUsable reports whether the page text carries any value the
+// summarizer parses, so the wait ends as soon as the usage card renders.
+func codexRenderedTextUsable(text string) bool {
+	return codexWeeklyPattern.MatchString(text) ||
+		codexCreditsPattern.MatchString(text) ||
+		codexTurnsPattern.MatchString(text) ||
+		extractBankedResetCountFromText(text) != nil
+}
+
 // clickFirstVisible mirrors click_first_visible: try each selector, click
-// the first visible match (up to 12 candidates per selector).
+// the first visible match (up to 12 candidates per selector). The click is a
+// JS el.click(): rod's Element.Click waits for requestAnimationFrame (via
+// WaitInteractable → WaitRepaint), which hidden background tabs never receive.
 func clickFirstVisible(page *rod.Page, selectors []string) bool {
 	for _, selector := range selectors {
 		elements, elementsErr := page.Elements(selector)
@@ -542,7 +581,7 @@ func clickFirstVisible(page *rod.Page, selectors []string) bool {
 			if visibleErr != nil || !visible {
 				continue
 			}
-			if clickErr := candidate.Click(proto.InputMouseButtonLeft, 1); clickErr == nil {
+			if _, clickErr := candidate.Eval("() => this.click()"); clickErr == nil {
 				return true
 			}
 		}
