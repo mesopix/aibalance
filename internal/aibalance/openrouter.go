@@ -52,7 +52,7 @@ func runOpenRouterCredits(ctx context.Context, options RunOptions) map[string]an
 	}
 
 	result := probeWebDashboard(ctx, page, openRouterCreditsURL,
-		options.TimeoutMS, options.WaitMS, openRouterRequiredResponses, nil)
+		options.TimeoutMS, options.WaitMS, openRouterRequiredResponses, nil, nil)
 	if result["status"] != "ok" {
 		return result
 	}

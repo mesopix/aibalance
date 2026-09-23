@@ -58,6 +58,14 @@ type ServiceRunner func(ctx context.Context, options RunOptions) map[string]any
 // ServiceSummarizer reduces a raw result map to the public summary map.
 type ServiceSummarizer func(result map[string]any) map[string]any
 
+// summaryHasQuota reports whether the summary carries a non-empty quota map
+// under key; the dashboardReadiness checks use it to recognize a trial
+// summary that already holds the data its card displays.
+func summaryHasQuota(summary map[string]any, key string) bool {
+	entry, isMap := summary[key].(map[string]any)
+	return isMap && len(entry) > 0
+}
+
 // Browser endpoint selectors for ServiceDefinition.BrowserEndpoint: which
 // CDP Chrome a runner needs, or none for Chrome-free services.
 const (
@@ -90,57 +98,73 @@ var serviceRegistry = map[string]ServiceDefinition{
 		BrowserEndpoint: BrowserEndpointNone,
 	},
 	"z_ai_coding_plan": {
-		DisplayName:     "Z.ai Coding",
-		Run:             makeWebDashboardRunner(zAIUsageURL, zaiRequiredResponses("api.z.ai"), func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "Z.ai Coding",
+		Run: makeWebDashboardRunner(zAIUsageURL, zaiRequiredResponses("api.z.ai"),
+			&dashboardReadiness{summarize: summarizeZAI, summaryReady: zaiSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeZAI,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       zAIUsageURL,
 	},
 	"z_ai_coding_plan_2": {
-		DisplayName:     "Z.ai Coding #2",
-		Run:             makeWebDashboardRunner(zAIUsageURL, zaiRequiredResponses("api.z.ai"), func(options RunOptions) string { return options.CDPURL2 }),
+		DisplayName: "Z.ai Coding #2",
+		Run: makeWebDashboardRunner(zAIUsageURL, zaiRequiredResponses("api.z.ai"),
+			&dashboardReadiness{summarize: summarizeZAI, summaryReady: zaiSummaryReady},
+			func(options RunOptions) string { return options.CDPURL2 }),
 		Summarize:       summarizeZAI,
 		BrowserEndpoint: BrowserEndpointSecondary,
 		TargetURL:       zAIUsageURL,
 	},
 	"bigmodel_coding_plan": {
-		DisplayName:     "BigModel Coding",
-		Run:             makeWebDashboardRunner(bigmodelUsageURL, zaiRequiredResponses("bigmodel.cn"), func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "BigModel Coding",
+		Run: makeWebDashboardRunner(bigmodelUsageURL, zaiRequiredResponses("bigmodel.cn"),
+			&dashboardReadiness{summarize: summarizeBigModel, summaryReady: zaiSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeBigModel,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       bigmodelUsageURL,
 	},
 	"bigmodel_coding_plan_2": {
-		DisplayName:     "BigModel Coding #2",
-		Run:             makeWebDashboardRunner(bigmodelUsageURL, zaiRequiredResponses("bigmodel.cn"), func(options RunOptions) string { return options.CDPURL2 }),
+		DisplayName: "BigModel Coding #2",
+		Run: makeWebDashboardRunner(bigmodelUsageURL, zaiRequiredResponses("bigmodel.cn"),
+			&dashboardReadiness{summarize: summarizeBigModel, summaryReady: zaiSummaryReady},
+			func(options RunOptions) string { return options.CDPURL2 }),
 		Summarize:       summarizeBigModel,
 		BrowserEndpoint: BrowserEndpointSecondary,
 		TargetURL:       bigmodelUsageURL,
 	},
 	"qwen_token_plan": {
-		DisplayName:     "Qwen Token Plan",
-		Run:             makeWebDashboardRunner(qwenTokenPlanURL, qwenRequiredResponses, func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "Qwen Token Plan",
+		Run: makeWebDashboardRunner(qwenTokenPlanURL, qwenRequiredResponses,
+			&dashboardReadiness{summarize: summarizeQwenTokenPlan, summaryReady: qwenSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeQwenTokenPlan,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       qwenTokenPlanURL,
 	},
 	"tencent_token_plan": {
-		DisplayName:     "Tencent Token Plan",
-		Run:             makeWebDashboardRunner(tencentTokenPlanURL, tencentRequiredResponses, func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "Tencent Token Plan",
+		Run: makeWebDashboardRunner(tencentTokenPlanURL, tencentRequiredResponses,
+			&dashboardReadiness{summarize: summarizeTencentTokenPlan, summaryReady: tencentSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeTencentTokenPlan,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       tencentTokenPlanURL,
 	},
 	"kimi_coding_plan": {
-		DisplayName:     "Kimi Coding",
-		Run:             makeWebDashboardRunner(kimiCodingPlanURL, kimiRequiredResponses, func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "Kimi Coding",
+		Run: makeWebDashboardRunner(kimiCodingPlanURL, kimiRequiredResponses,
+			&dashboardReadiness{summarize: summarizeKimi, summaryReady: kimiSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeKimi,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       kimiCodingPlanURL,
 	},
 	"qoder_team_credit": {
-		DisplayName:     "Qoder Team",
-		Run:             makeWebDashboardRunner(qoderUsageURL, qoderRequiredResponses, func(options RunOptions) string { return options.CDPURL }),
+		DisplayName: "Qoder Team",
+		Run: makeWebDashboardRunner(qoderUsageURL, qoderRequiredResponses,
+			&dashboardReadiness{summarize: summarizeQoder, summaryReady: qoderSummaryReady},
+			func(options RunOptions) string { return options.CDPURL }),
 		Summarize:       summarizeQoder,
 		BrowserEndpoint: BrowserEndpointPrimary,
 		TargetURL:       qoderUsageURL,

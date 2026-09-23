@@ -33,7 +33,7 @@ func TestLiveBigmodelProbe(t *testing.T) {
 	}
 
 	result := probeWebDashboard(ctx, page, "https://bigmodel.cn/coding-plan/personal/usage", 30_000, 3_000,
-		zaiRequiredResponses("bigmodel.cn"), nil)
+		zaiRequiredResponses("bigmodel.cn"), nil, nil)
 	summary := summarizeZAIWithHost(result, "bigmodel.cn")
 
 	if summary["status"] != "ok" {

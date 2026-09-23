@@ -28,6 +28,13 @@ func zaiRequiredResponses(apiHost string) []string {
 	}
 }
 
+// zaiSummaryReady is the dashboardReadiness check for z.ai / BigModel: the
+// card renders the rolling quota rows, so either window carrying data means
+// the display-critical payload (API or visible text) has landed.
+func zaiSummaryReady(summary map[string]any) bool {
+	return summaryHasQuota(summary, "five_hour") || summaryHasQuota(summary, "weekly")
+}
+
 // summarizeBigModel reuses the z.ai parser with the bigmodel.cn API host,
 // mirroring the summarize_z_ai(api_host="bigmodel.cn") call in Python.
 func summarizeBigModel(result map[string]any) map[string]any {

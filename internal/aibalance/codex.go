@@ -122,7 +122,7 @@ func runCodexService(ctx context.Context, options RunOptions) map[string]any {
 
 	var attempts []map[string]any
 	for _, candidateURL := range codexURLCandidates {
-		attempt := probeWebDashboard(ctx, page, candidateURL, options.TimeoutMS, options.WaitMS, codexRequiredResponses, collectCodexProfileUsageText)
+		attempt := probeWebDashboard(ctx, page, candidateURL, options.TimeoutMS, options.WaitMS, codexRequiredResponses, nil, collectCodexProfileUsageText)
 		attempts = append(attempts, attempt)
 		if codexUsageSignal(attempt) {
 			attempt["tried_urls"] = triedURLs(attempts)

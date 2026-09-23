@@ -10,6 +10,12 @@ var qoderRequiredResponses = []string{
 	"/api/v1/organizations/",
 }
 
+// qoderSummaryReady is the dashboardReadiness check for Qoder: the card
+// renders the single total-credit row from the big_model_credits payload.
+func qoderSummaryReady(summary map[string]any) bool {
+	return summaryHasQuota(summary, "plan_quota")
+}
+
 // summarizeQoder mirrors summarize_qoder in ai_balance.py.
 func summarizeQoder(result map[string]any) map[string]any {
 	summary := map[string]any{

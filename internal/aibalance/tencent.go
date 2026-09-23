@@ -14,6 +14,19 @@ var tencentRequiredResponses = []string{
 	"cmd=DescribeTokenPlanUsage",
 }
 
+// tencentSummaryReady is the dashboardReadiness check for Tencent: the card
+// renders monthly credit rows, which only the usage API provides.
+func tencentSummaryReady(summary map[string]any) bool {
+	plans, _ := summary["plans"].([]any)
+	for _, planItem := range plans {
+		planEntry, isMap := planItem.(map[string]any)
+		if isMap && summaryHasQuota(planEntry, "monthly") {
+			return true
+		}
+	}
+	return false
+}
+
 // summarizeTencentTokenPlan reduces the TokenHub Token Plan console APIs to
 // the public summary: one entry per active plan carrying its monthly credit
 // quota (CycleRemainCredits / CycleCapacityCredits).

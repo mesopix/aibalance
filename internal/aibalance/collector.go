@@ -51,13 +51,19 @@ type responseCollector struct {
 	// transferring; GetResponseBody only answers once loading finished.
 	inFlight map[proto.NetworkRequestID]pendingCapture
 	pending  []pendingCapture
+	// bodies caches snapshot entries by request ID so repeated mid-pass
+	// readiness trials never refetch a body they already read.
+	bodies map[proto.NetworkRequestID]CapturedJSONResponse
 }
 
 // collectResponses attaches a Network response listener to the page.
 // Unlike Playwright's page.on(), rod only dispatches events while the wait
 // function returned by EachEvent runs, so it is driven in a goroutine.
 func collectResponses(page *rod.Page) *responseCollector {
-	collector := &responseCollector{inFlight: map[proto.NetworkRequestID]pendingCapture{}}
+	collector := &responseCollector{
+		inFlight: map[proto.NetworkRequestID]pendingCapture{},
+		bodies:   map[proto.NetworkRequestID]CapturedJSONResponse{},
+	}
 	listener := page.EachEvent(func(event *proto.NetworkResponseReceived) {
 		response := event.Response
 		if response == nil || !matchesResponseKeyword(response.URL) {
@@ -141,6 +147,63 @@ func isJSONContentType(headers proto.NetworkHeaders) bool {
 	return false
 }
 
+// fetchResponseEntry reads one finished capture's body and shapes it as a
+// json_responses entry; the final results and the readiness trial share it.
+func fetchResponseEntry(page *rod.Page, pendingItem pendingCapture) CapturedJSONResponse {
+	entry := CapturedJSONResponse{
+		URL:    pendingItem.url,
+		Status: pendingItem.status,
+	}
+	bodyResult, bodyErr := proto.NetworkGetResponseBody{
+		RequestID: pendingItem.requestID,
+	}.Call(page.Timeout(bodyFetchTimeout))
+	if bodyErr != nil {
+		entry.CaptureError = RedactText(bodyErr.Error())
+		return entry
+	}
+	if bodyResult == nil {
+		entry.CaptureError = "<empty response body>"
+		return entry
+	}
+	if len(bodyResult.Body) > maxResponseBytes {
+		entry.Skipped = "response_too_large"
+		entry.Bytes = len(bodyResult.Body)
+		return entry
+	}
+	var payload map[string]any
+	if jsonErr := json.Unmarshal([]byte(bodyResult.Body), &payload); jsonErr != nil || payload == nil {
+		// Unparseable bodies are dropped silently, like Python's
+		// json.JSONDecodeError return.
+		return entry
+	}
+	entry.JSON = payload
+	return entry
+}
+
+// snapshot returns entries for every finished capture, fetching each body
+// once and caching it: readiness trials rerun throughout the wait and must
+// not refetch bodies they already read. Entry shapes mirror results().
+func (collector *responseCollector) snapshot(page *rod.Page) []CapturedJSONResponse {
+	collector.mutex.Lock()
+	pendingItems := append([]pendingCapture(nil), collector.pending...)
+	collector.mutex.Unlock()
+
+	entries := make([]CapturedJSONResponse, 0, len(pendingItems))
+	for _, pendingItem := range pendingItems {
+		collector.mutex.Lock()
+		entry, cached := collector.bodies[pendingItem.requestID]
+		collector.mutex.Unlock()
+		if !cached {
+			entry = fetchResponseEntry(page, pendingItem)
+			collector.mutex.Lock()
+			collector.bodies[pendingItem.requestID] = entry
+			collector.mutex.Unlock()
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 // results fetches response bodies and returns the json_responses list,
 // mirroring the capture semantics of JsonResponseCollector.
 func (collector *responseCollector) results(page *rod.Page) []CapturedJSONResponse {
@@ -150,37 +213,7 @@ func (collector *responseCollector) results(page *rod.Page) []CapturedJSONRespon
 
 	entries := make([]CapturedJSONResponse, 0, len(pending))
 	for _, pendingItem := range pending {
-		entry := CapturedJSONResponse{
-			URL:    pendingItem.url,
-			Status: pendingItem.status,
-		}
-		bodyResult, bodyErr := proto.NetworkGetResponseBody{
-			RequestID: pendingItem.requestID,
-		}.Call(page.Timeout(bodyFetchTimeout))
-		if bodyErr != nil {
-			entry.CaptureError = RedactText(bodyErr.Error())
-			entries = append(entries, entry)
-			continue
-		}
-		if bodyResult == nil {
-			entry.CaptureError = "<empty response body>"
-			entries = append(entries, entry)
-			continue
-		}
-		if len(bodyResult.Body) > maxResponseBytes {
-			entry.Skipped = "response_too_large"
-			entry.Bytes = len(bodyResult.Body)
-			entries = append(entries, entry)
-			continue
-		}
-		var payload map[string]any
-		if jsonErr := json.Unmarshal([]byte(bodyResult.Body), &payload); jsonErr != nil || payload == nil {
-			// Unparseable bodies are dropped silently, like Python's
-			// json.JSONDecodeError return.
-			continue
-		}
-		entry.JSON = payload
-		entries = append(entries, entry)
+		entries = append(entries, fetchResponseEntry(page, pendingItem))
 	}
 	return entries
 }

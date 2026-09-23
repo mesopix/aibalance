@@ -9,6 +9,13 @@ var kimiRequiredResponses = []string{
 	"BillingService/GetUsages",
 }
 
+// kimiSummaryReady is the dashboardReadiness check for Kimi: the card
+// renders the 5h window and 7d weekly bars, which one GetUsages payload
+// carries together.
+func kimiSummaryReady(summary map[string]any) bool {
+	return summaryHasQuota(summary, "window") || summaryHasQuota(summary, "weekly")
+}
+
 // summarizeKimi mirrors summarize_kimi in ai_balance.py.
 func summarizeKimi(result map[string]any) map[string]any {
 	summary := map[string]any{

@@ -14,6 +14,13 @@ var qwenRequiredResponses = []string{
 	"/tokenplan/personal/api/v2/usage",
 }
 
+// qwenSummaryReady is the dashboardReadiness check for the Qwen plan: the
+// card renders the 5h/7d usage bars, whether sourced from the API or from
+// the visible page text.
+func qwenSummaryReady(summary map[string]any) bool {
+	return summaryHasQuota(summary, "five_hour") || summaryHasQuota(summary, "weekly")
+}
+
 // qwenPlanPattern matches "Lite/Standard/Pro 套餐/Plan" lines.
 var qwenPlanPattern = regexp.MustCompile(`(?i)^(Lite|Standard|Pro)\s*(?:套餐|Plan)$`)
 

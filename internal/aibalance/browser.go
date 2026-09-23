@@ -93,12 +93,36 @@ func connectCDP(ctx context.Context, cdpURL string) (*rod.Browser, error) {
 	return browser, nil
 }
 
+// dashboardReadiness ends the response wait by outcome instead of by URL:
+// summarize runs over a trial result built from the captures so far plus
+// the current page text, and summaryReady reports whether that trial
+// summary already carries the data the card displays.
+type dashboardReadiness struct {
+	summarize    ServiceSummarizer
+	summaryReady func(summary map[string]any) bool
+}
+
+// evaluateReadiness reports whether the service's real summarizer, run over
+// a trial result assembled from the captured bodies and the current page
+// text, already produces the display-critical fields. Reusing the real
+// summarizer (rather than a parallel parser) keeps "ready" identical to
+// what the final summarize will output from the same data.
+func evaluateReadiness(page *rod.Page, collector *responseCollector, readiness *dashboardReadiness) bool {
+	trialResult := map[string]any{
+		"status":         "ok",
+		"json_responses": collector.snapshot(page),
+		"_visible_text":  RedactText(readVisibleBodyText(page)),
+	}
+	return readiness.summaryReady(readiness.summarize(trialResult))
+}
+
 // makeWebDashboardRunner builds the standard runner for services that
 // scrape one dashboard page over CDP. cdpSelector picks which automation
 // Chrome to drive (primary or the second z.ai account). requiredResponses
 // are the API URL fragments the summarizer reads; the probe stops waiting
-// once all of them have been captured.
-func makeWebDashboardRunner(targetURL string, requiredResponses []string, cdpSelector func(options RunOptions) string) ServiceRunner {
+// once all of them have been captured, or earlier via readiness once the
+// trial summary already carries the display data.
+func makeWebDashboardRunner(targetURL string, requiredResponses []string, readiness *dashboardReadiness, cdpSelector func(options RunOptions) string) ServiceRunner {
 	return func(ctx context.Context, options RunOptions) map[string]any {
 		cdpURL := cdpSelector(options)
 		if cdpURL == "" {
@@ -124,7 +148,7 @@ func makeWebDashboardRunner(targetURL string, requiredResponses []string, cdpSel
 			}
 		}
 
-		return probeWebDashboard(ctx, page, targetURL, options.TimeoutMS, options.WaitMS, requiredResponses, nil)
+		return probeWebDashboard(ctx, page, targetURL, options.TimeoutMS, options.WaitMS, requiredResponses, readiness, nil)
 	}
 }
 
@@ -408,20 +432,22 @@ func evalString(page *rod.Page, expression string) (string, error) {
 }
 
 // waitForDashboardData waits for the service's API data and reports whether
-// every required response arrived. rod's network-idle wait cannot serve this
-// job: its window is a minimum wait rather than a cap, and dashboards that
-// poll (the Aliyun console polls continuously) never produce one, so it burned
-// the whole navigation budget on every pass.
+// the display data is in hand (true skips the caller's settle delay). rod's
+// network-idle wait cannot serve this job: its window is a minimum wait
+// rather than a cap, and dashboards that poll (the Aliyun console polls
+// continuously) never produce one, so it burned the whole navigation budget
+// on every pass.
 //
 // The wait ends as soon as all required responses are captured. Hosts sharing
 // a summarizer do not always call every endpoint it reads — BigModel has no
 // model-usage endpoint — so it also ends once captures stop arriving for
-// captureQuietWindow, making a missing endpoint cost a short quiet window
-// instead of the budget. Services that name no responses keep the idle wait:
-// without a data signal, a quiet network is the only evidence the page
-// finished loading.
-func waitForDashboardData(ctx context.Context, boundedPage *rod.Page, collector *responseCollector, requiredResponses []string) bool {
-	if len(requiredResponses) == 0 {
+// captureQuietWindow; at that point readiness gets the final say: when the
+// trial summary already carries the data the card displays, the settle delay
+// would only wait for data nobody displays. Services that name no responses
+// and declare no readiness keep the idle wait: without a data signal, a quiet
+// network is the only evidence the page finished loading.
+func waitForDashboardData(ctx context.Context, boundedPage *rod.Page, collector *responseCollector, requiredResponses []string, readiness *dashboardReadiness) bool {
+	if len(requiredResponses) == 0 && readiness == nil {
 		boundedPage.WaitRequestIdle(networkIdleLimit, nil, nil, nil)()
 		return false
 	}
@@ -432,7 +458,7 @@ func waitForDashboardData(ctx context.Context, boundedPage *rod.Page, collector 
 	var quietSince time.Time
 	for {
 		captured, ready := collector.progress(requiredResponses)
-		if ready {
+		if len(requiredResponses) > 0 && ready {
 			return true
 		}
 		// The quiet window only starts once something has been captured: a
@@ -441,8 +467,8 @@ func waitForDashboardData(ctx context.Context, boundedPage *rod.Page, collector 
 		if captured != capturedCount {
 			capturedCount = captured
 			quietSince = time.Now()
-		} else if captured > 0 && time.Since(quietSince) >= captureQuietWindow {
-			return false
+		} else if captured > 0 && !quietSince.IsZero() && time.Since(quietSince) >= captureQuietWindow {
+			return readiness != nil && evaluateReadiness(boundedPage, collector, readiness)
 		}
 
 		select {
@@ -460,9 +486,10 @@ func waitForDashboardData(ctx context.Context, boundedPage *rod.Page, collector 
 // ai_balance.py. The "extracted" and "links" diagnostic fields are not
 // ported; no summarizer consumes them. requiredResponses names the API URL
 // fragments the summarizer reads, so the wait ends as soon as that data
-// lands. profileCollector runs between the initial and final text reads
+// lands; readiness ends it by outcome instead (see dashboardReadiness).
+// profileCollector runs between the initial and final text reads
 // (ChatGPT Codex opens its profile menu there); nil skips it.
-func probeWebDashboard(ctx context.Context, page *rod.Page, targetURL string, timeoutMS int, waitMS int, requiredResponses []string, profileCollector func(*rod.Page) string) map[string]any {
+func probeWebDashboard(ctx context.Context, page *rod.Page, targetURL string, timeoutMS int, waitMS int, requiredResponses []string, readiness *dashboardReadiness, profileCollector func(*rod.Page) string) map[string]any {
 	if timeoutMS <= 0 {
 		timeoutMS = defaultTimeoutMS
 	}
@@ -511,7 +538,7 @@ func probeWebDashboard(ctx context.Context, page *rod.Page, targetURL string, ti
 	// WaitLoad is best-effort after cross-process re-attach, mirroring the
 	// tolerated Python timeouts.
 	_ = boundedPage.WaitLoad()
-	dataReady := waitForDashboardData(ctx, boundedPage, collector, requiredResponses)
+	dataReady := waitForDashboardData(ctx, boundedPage, collector, requiredResponses, readiness)
 	// The settle delay covers late XHRs the service cannot name; once every
 	// named response is in hand there is nothing left to settle for.
 	if waitMS > 0 && !dataReady {
