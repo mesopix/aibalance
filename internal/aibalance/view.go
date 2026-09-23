@@ -174,10 +174,18 @@ func formatQoderView(view *ServiceView, account map[string]any) {
 	}
 }
 
-// formatCodexView mirrors format_chatgpt_lines.
+// formatCodexView mirrors format_chatgpt_lines, plus a fact for the
+// available usage-limit resets shown on the analytics page.
 func formatCodexView(view *ServiceView, account map[string]any) {
 	if weekly, isMap := account["weekly"].(map[string]any); isMap {
 		view.Quotas = append(view.Quotas, quotaViewFromMap("7d", weekly))
+	}
+	if resets := ToInt(account["banked_resets_remaining"]); resets != nil {
+		resetWord := "resets"
+		if *resets == 1 {
+			resetWord = "reset"
+		}
+		view.Facts = append(view.Facts, fmt.Sprintf("%d usage limit %s available", *resets, resetWord))
 	}
 }
 

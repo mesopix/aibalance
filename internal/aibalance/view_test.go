@@ -173,6 +173,45 @@ func TestFormatSummaryViewsQoderLabel(t *testing.T) {
 	}
 }
 
+func TestFormatCodexViewBankedResets(t *testing.T) {
+	buildView := func(bankedResets any) ServiceView {
+		summary := map[string]any{
+			"accounts": map[string]any{
+				"chatgpt_codex": map[string]any{
+					"status":                    "ok",
+					"weekly":                    map[string]any{"remaining_percent": 92, "reset": "2026-09-29 17:42 CST"},
+					"banked_resets_remaining":   bankedResets,
+				},
+			},
+		}
+		return FormatSummaryViews(summary)[0]
+	}
+
+	singular := buildView(1)
+	if len(singular.Facts) != 1 || singular.Facts[0] != "1 usage limit reset available" {
+		t.Errorf("facts = %#v, want singular reset line", singular.Facts)
+	}
+
+	// Cached summaries round-trip through JSON, turning ints into float64.
+	plural := buildView(float64(3))
+	if len(plural.Facts) != 1 || plural.Facts[0] != "3 usage limit resets available" {
+		t.Errorf("facts = %#v, want plural resets line", plural.Facts)
+	}
+
+	summary := map[string]any{
+		"accounts": map[string]any{
+			"chatgpt_codex": map[string]any{
+				"status": "ok",
+				"weekly": map[string]any{"remaining_percent": 92},
+			},
+		},
+	}
+	noResets := FormatSummaryViews(summary)[0]
+	if len(noResets.Facts) != 0 {
+		t.Errorf("facts = %#v, want none without banked_resets_remaining", noResets.Facts)
+	}
+}
+
 func TestStatusLabel(t *testing.T) {
 	cases := []struct {
 		result map[string]any
